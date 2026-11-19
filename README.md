@@ -53,6 +53,10 @@ Tài khoản demo: `ADMIN`, `BGD`, `NM1-VP`, `NM1-X1`, `NM1-X2`, `NM1-KHO`, `NM2
 - `NM1-X1` là một nhóm (xưởng).
 - `NM1-11` là một bộ phận cụ thể.
 
+**Quản lý người dùng trên web** (Admin › Quản trị › **Người dùng & PIN**): thêm người dùng, đổi họ tên, vai trò, phạm vi (chọn đơn vị / xưởng / từng bộ phận), khóa hoặc mở tài khoản, và đặt PIN do Admin tự chọn hoặc bấm *Tạo PIN ngẫu nhiên*. PIN gồm đúng 6 chữ số, không dùng 6 số giống nhau hoặc dãy liên tiếp. PIN chỉ lưu dạng mã hóa, không ghi vào `LichSu`. Hệ thống không cho Admin tự khóa mình và luôn giữ ít nhất 1 Admin.
+
+**Tự đổi PIN**: mọi người dùng bấm **Đổi PIN** trên thanh trên cùng, nhập PIN hiện tại và PIN mới.
+
 **Nhóm (cột `Xưởng` trong `DanhMuc`)** được lấy theo cách chia bạn đã điền trong file Excel. Trong sheet chỉ cần ghi mã ngắn, hệ thống tự ghép với đơn vị (ví dụ `X1` của NM1 thành `NM1-X1`).
 
 | Nhóm | NM1 | NM2 |
