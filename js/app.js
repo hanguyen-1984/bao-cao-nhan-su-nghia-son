@@ -111,7 +111,7 @@
   function route() {
     if (S.skipRoute) { S.skipRoute = false; return; }
     if (!S.user) return viewLogin();
-    var h = parseHash(), allowed = navItems().map(function (x) { return x[0]; });
+    var h = parseHash(), allowed = navItems().map(function (x) { return x[0]; }).concat(['doi-pin']);
     if (allowed.indexOf(h.view) < 0) { go('#/' + (S.user.vaiTro === 'NHAP' ? 'nhap' : 'dashboard')); return; }
     if (S.dirty && lastHash && lastHash !== h.raw && !confirm('Có số liệu chưa gửi. Rời trang này và bỏ các thay đổi?')) {
       S.skipRoute = true; location.hash = lastHash; return;
@@ -121,7 +121,7 @@
     cleanup();
     S.view = h.view;
     shell();
-    ({ 'nhap': viewNhap, 'dashboard': viewDashboard, 'bao-cao': viewBaoCao, 'quan-tri': viewQuanTri })[h.view](h);
+    ({ 'nhap': viewNhap, 'dashboard': viewDashboard, 'bao-cao': viewBaoCao, 'quan-tri': viewQuanTri, 'doi-pin': viewDoiPin })[h.view](h);
   }
   function cleanup() {
     S.charts.forEach(function (c) { c.destroy(); });
@@ -142,7 +142,7 @@
       return '<a href="#/' + x[0] + '" class="' + (S.view === x[0] ? 'on' : '') + '">' + x[1] + '</a>';
     }).join('');
     $('.who').innerHTML = '<span>' + esc(S.user.ten) + '</span><span class="role">' + (ROLE[S.user.vaiTro] || S.user.vaiTro) +
-      '</span><button class="btn sm" id="btn-out">Đăng xuất</button>';
+      '</span><a class="btn sm" href="#/doi-pin" id="btn-pin">Đổi PIN</a><button class="btn sm" id="btn-out">Đăng xuất</button>';
     $('#btn-out').onclick = function () { if (!S.dirty || confirm('Có số liệu chưa gửi. Vẫn đăng xuất?')) logout(); };
     $('#main').innerHTML = '<div class="empty">Đang tải…</div>';
   }
@@ -715,11 +715,12 @@
   // =====================================================================
   function viewQuanTri(h) {
     var sub = h.sub || 'nhap-bu';
-    var tabs = [['nhap-bu', 'Nhập bù / sửa số liệu'], ['lich-su', 'Lịch sử chỉnh sửa']];
+    var tabs = [['nhap-bu', 'Nhập bù / sửa số liệu'], ['nguoi-dung', 'Người dùng & PIN'], ['lich-su', 'Lịch sử chỉnh sửa']];
     $('#main').innerHTML = '<div class="tabs">' + tabs.map(function (t) {
       return '<a href="#/quan-tri/' + t[0] + '" class="' + (t[0] === sub ? 'on' : '') + '">' + t[1] + '</a>';
     }).join('') + (CFG.SHEET_URL ? '<a href="' + esc(CFG.SHEET_URL) + '" target="_blank" rel="noopener">Mở Google Sheet ↗</a>' : '') + '</div><div id="qt"><div class="empty">Đang tải…</div></div>';
     if (sub === 'lich-su') return qtLichSu();
+    if (sub === 'nguoi-dung') return qtNguoiDung();
     qtNhapBu(h.q.ngay || '');
   }
   function qtNhapBu(ngay) {
@@ -781,7 +782,7 @@
           if (!a && b) out.push('Nhập mới: vắng ' + C.VANG.reduce(function (s, f) { return s + (y[f] || 0); }, 0));
           if (a && !b) out.push('Đã xóa');
           return out.join('; ');
-        } catch (e) { return ''; }
+        } catch (e) { return [a, b].filter(Boolean).join(' → '); }
       };
       $('#qt').innerHTML = '<div class="card"><h3>200 thao tác gần nhất <small>đầy đủ trong sheet LichSu</small></h3><div class="tbl-wrap" style="max-height:75vh"><table class="tbl"><thead><tr><th>Thời điểm</th><th>Người thực hiện</th><th>Hành động</th><th>Ngày số liệu</th><th style="text-align:left">Bộ phận</th><th style="text-align:left">Thay đổi</th><th style="text-align:left">Lý do</th></tr></thead><tbody>' +
         (d.rows.length ? d.rows.map(function (r) {
@@ -789,6 +790,162 @@
             '</td><td>' + esc(diff(r.truoc, r.sau)) + '</td><td>' + esc(r.lyDo) + '</td></tr>';
         }).join('') : '<tr><td colspan="7" class="empty">Chưa có lịch sử.</td></tr>') + '</tbody></table></div></div>';
     }).catch(function (e) { $('#qt').innerHTML = '<div class="banner crit">' + esc(e.message) + '</div>'; });
+  }
+
+  // =====================================================================
+  // NGƯỜI DÙNG & PIN
+  // =====================================================================
+  /** Cùng quy tắc với máy chủ: đúng 6 chữ số, không trùng hết, không dãy liên tiếp. */
+  function pinError(pin) {
+    pin = String(pin || '');
+    if (!/^\d{6}$/.test(pin)) return 'PIN phải gồm đúng 6 chữ số.';
+    if (/^(\d)\1{5}$/.test(pin)) return 'PIN không được gồm 6 chữ số giống nhau.';
+    if ('0123456789'.indexOf(pin) >= 0 || '9876543210'.indexOf(pin) >= 0) return 'PIN không được là dãy số liên tiếp (VD 123456).';
+    return '';
+  }
+  function randomPin() {
+    var a = new Uint32Array(1), p;
+    do { (window.crypto || window.msCrypto).getRandomValues(a); p = String(100000 + a[0] % 900000); } while (pinError(p));
+    return p;
+  }
+  function pinFields(required) {
+    return '<div class="grid g2" style="gap:12px"><label class="fld">' + (required ? 'PIN (6 chữ số)' : 'PIN mới (để trống nếu giữ PIN cũ)') +
+      '<input class="input" id="u-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password"></label>' +
+      '<label class="fld">Nhập lại PIN<input class="input" id="u-pin2" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password"></label></div>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><button type="button" class="btn sm" id="u-rand">Tạo PIN ngẫu nhiên</button>' +
+      '<label class="chip" style="cursor:pointer"><input type="checkbox" id="u-show"> Hiện PIN</label><span class="muted" id="u-pinmsg"></span></div>';
+  }
+  function bindPinFields() {
+    var show = function (on) { ['#u-pin', '#u-pin2'].forEach(function (id) { $(id).type = on ? 'text' : 'password'; }); };
+    $('#u-show').onchange = function () { show(this.checked); };
+    $('#u-rand').onclick = function () {
+      var p = randomPin(); $('#u-pin').value = p; $('#u-pin2').value = p; $('#u-show').checked = true; show(true);
+      $('#u-pinmsg').textContent = 'Ghi lại PIN này và gửi riêng cho người dùng.';
+    };
+    ['#u-pin', '#u-pin2'].forEach(function (id) { $(id).addEventListener('input', function () { this.value = this.value.replace(/\D/g, ''); }); });
+  }
+  function readPin(required) {
+    var p = $('#u-pin').value.trim(), p2 = $('#u-pin2').value.trim();
+    if (!p && !p2 && !required) return '';
+    var e = pinError(p); if (e) throw new Error(e);
+    if (p !== p2) throw new Error('Hai lần nhập PIN không khớp.');
+    return p;
+  }
+
+  var U = { users: [], scope: null, q: '' };
+  function scopeText(phamVi) {
+    if (!U.scope) return phamVi;
+    return String(phamVi || '').split(/[,;\s]+/).filter(Boolean).map(function (t) {
+      t = t.toUpperCase();
+      if (t === '*') return 'Toàn công ty';
+      if (U.scope.donVi.indexOf(t) >= 0) return 'Cả ' + t;
+      var x = U.scope.xuong.filter(function (x) { return x.ma === t; })[0]; if (x) return x.ten;
+      var b = U.scope.boPhan.filter(function (b) { return b.ma === t; })[0]; if (b) return b.ten;
+      return t;
+    }).join(', ');
+  }
+  function scopeCount(phamVi) {
+    if (!U.scope) return 0;
+    return U.scope.boPhan.filter(function (b) { return C.inScope(phamVi, { maBP: b.ma, donVi: b.donVi, xuong: b.xuong }); }).length;
+  }
+  function qtNguoiDung() {
+    api('userList').then(function (d) { U.users = d.users; U.scope = d.scope; renderUsers(); })
+      .catch(function (e) { $('#qt').innerHTML = '<div class="banner crit">' + esc(e.message) + '</div>'; });
+  }
+  function renderUsers(msg) {
+    var q = U.q.toLowerCase(), list = U.users.filter(function (u) { return !q || (u.ma + ' ' + u.ten + ' ' + u.phamVi).toLowerCase().indexOf(q) >= 0; });
+    var html = '<div class="page-head"><div><h1>Người dùng &amp; PIN</h1><div class="sub">' + U.users.length + ' tài khoản · PIN được mã hóa, không ai xem lại được – quên thì đặt PIN mới.</div></div>' +
+      '<div class="tools"><input class="input" id="u-q" placeholder="Tìm mã, tên, phạm vi…" style="width:200px" value="' + esc(U.q) + '"><button class="btn primary" id="u-add">+ Thêm người dùng</button></div></div>' +
+      (msg ? '<div class="banner info">' + esc(msg) + '</div>' : '') + '<div id="u-form"></div>' +
+      '<div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th style="text-align:left">Mã</th><th style="text-align:left">Họ tên</th><th>Vai trò</th>' +
+      '<th style="text-align:left">Phạm vi nhập</th><th>Số BP</th><th>PIN</th><th>Trạng thái</th><th></th></tr></thead><tbody>' +
+      (list.length ? list.map(function (u) {
+        return '<tr' + (u.dangDung ? '' : ' class="muted"') + '><td class="nowrap"><b>' + esc(u.ma) + '</b></td><td>' + esc(u.ten) + (u.ghiChu ? '<small class="muted" style="display:block">' + esc(u.ghiChu) + '</small>' : '') +
+          '</td><td class="nowrap"><span class="chip ' + (u.vaiTro === 'ADMIN' ? 'warn' : u.vaiTro === 'NHAP' ? 'info' : '') + '">' + esc(ROLE[u.vaiTro] || u.vaiTro) + '</span></td><td>' +
+          esc(u.vaiTro === 'NHAP' ? scopeText(u.phamVi) : 'Xem toàn công ty') + '</td><td class="num">' + (u.vaiTro === 'NHAP' ? scopeCount(u.phamVi) : '') + '</td><td>' +
+          (u.coPin ? '<span class="chip good">Đã có</span>' : '<span class="chip crit">Chưa có</span>') + '</td><td>' + (u.dangDung ? '<span class="chip good">Đang dùng</span>' : '<span class="chip">Đã khóa</span>') +
+          '</td><td class="nowrap"><button class="btn sm" data-edit="' + esc(u.ma) + '">Sửa / đặt PIN</button></td></tr>';
+      }).join('') : '<tr><td colspan="8" class="empty">Không có người dùng phù hợp.</td></tr>') + '</tbody></table></div></div>';
+    $('#qt').innerHTML = html;
+    $('#u-q').oninput = function () { U.q = this.value; var pos = this.selectionStart; renderUsers(); var i = $('#u-q'); i.focus(); i.setSelectionRange(pos, pos); };
+    $('#u-add').onclick = function () { userForm(null); };
+    $$('[data-edit]').forEach(function (b) { b.onclick = function () { userForm(U.users.filter(function (u) { return u.ma === b.dataset.edit; })[0]); }; });
+  }
+  function userForm(u) {
+    var isNew = !u, sc = U.scope, cur = isNew ? [] : String(u.phamVi || '').toUpperCase().split(/[,;\s]+/).filter(Boolean);
+    var cb = function (val, label, extra) {
+      return '<label class="chip" style="cursor:pointer;margin:0 6px 6px 0"><input type="checkbox" class="u-sc" value="' + esc(val) + '"' + (cur.indexOf(val) >= 0 ? ' checked' : '') + '> ' + esc(label) +
+        (extra ? ' <span class="muted">' + esc(extra) + '</span>' : '') + '</label>';
+    };
+    var bpByX = {};
+    sc.boPhan.forEach(function (b) { var k = b.xuong || b.donVi + ' · chưa phân xưởng'; (bpByX[k] = bpByX[k] || []).push(b); });
+    var html = '<div class="card" style="margin-bottom:16px;border-color:var(--brand-green)"><h3>' + (isNew ? 'Thêm người dùng mới' : 'Sửa người dùng ' + esc(u.ma)) + '</h3>' +
+      '<form id="f-user" autocomplete="off"><div class="grid g2" style="gap:12px">' +
+      '<label class="fld">Mã người dùng (dùng để đăng nhập)<input class="input" id="u-ma" maxlength="20" autocapitalize="characters" placeholder="VD: NM1-X1-HUNG" value="' + (isNew ? '' : esc(u.ma)) + '"' + (isNew ? '' : ' disabled') + '></label>' +
+      '<label class="fld">Họ tên / tên hiển thị<input class="input" id="u-ten" maxlength="80" placeholder="VD: Nguyễn Văn A – Thống kê Xưởng 1" value="' + (isNew ? '' : esc(u.ten)) + '"></label>' +
+      '<label class="fld">Vai trò<select class="input" id="u-vt">' + [['NHAP', 'Nhập liệu – nhập số cho các bộ phận được giao, xem báo cáo'], ['XEM', 'Chỉ xem – Dashboard và báo cáo'], ['ADMIN', 'Quản trị – toàn quyền, nhập bù, quản lý người dùng']].map(function (o) {
+        return '<option value="' + o[0] + '"' + ((isNew ? 'NHAP' : u.vaiTro) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+      }).join('') + '</select></label>' +
+      '<label class="fld">Ghi chú<input class="input" id="u-gc" maxlength="200" value="' + (isNew ? '' : esc(u.ghiChu || '')) + '"></label></div>' +
+      '<div id="u-scope-box" style="margin-top:14px"><div class="fld" style="margin-bottom:6px"><b style="color:var(--ink)">Phạm vi nhập liệu</b> <span class="muted">– chọn đơn vị, xưởng hoặc từng bộ phận</span></div>' +
+      '<div>' + cb('*', 'Toàn công ty') + sc.donVi.map(function (d) { return cb(d, 'Cả ' + d); }).join('') + '</div>' +
+      '<div>' + sc.xuong.map(function (x) { return cb(x.ma, x.ten, x.soBP + ' BP'); }).join('') + '</div>' +
+      '<details style="margin-top:4px"><summary style="cursor:pointer;color:var(--brand-moss)">Chọn từng bộ phận</summary><div style="margin-top:8px">' +
+      Object.keys(bpByX).sort().map(function (k) {
+        return '<div style="margin-bottom:6px"><div class="muted" style="font-size:12px;margin-bottom:4px">' + esc(C.tenXuong(k)) + '</div>' + bpByX[k].map(function (b) { return cb(b.ma, b.ten.replace(/^NM\d+\s*-\s*/, '')); }).join('') + '</div>';
+      }).join('') + '</div></details><div class="muted" id="u-scope-sum" style="margin-top:6px"></div></div>' +
+      '<div style="margin-top:14px">' + pinFields(isNew) + '</div>' +
+      '<label class="chip" style="cursor:pointer;margin-top:12px"><input type="checkbox" id="u-dd"' + (isNew || u.dangDung ? ' checked' : '') + '> Đang dùng (bỏ chọn để khóa tài khoản)</label>' +
+      '<div style="display:flex;gap:8px;margin-top:16px"><button class="btn primary" type="submit">' + (isNew ? 'Thêm người dùng' : 'Lưu thay đổi') + '</button><button class="btn" type="button" id="u-cancel">Hủy</button></div></form></div>';
+    $('#u-form').innerHTML = html;
+    $('#u-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    var sel = function () { return $$('.u-sc').filter(function (i) { return i.checked; }).map(function (i) { return i.value; }); };
+    var sync = function () {
+      var nhap = $('#u-vt').value === 'NHAP';
+      $('#u-scope-box').style.display = nhap ? '' : 'none';
+      var s = sel(), all = s.indexOf('*') >= 0;
+      $$('.u-sc').forEach(function (i) { if (i.value !== '*') i.disabled = all; });
+      var ps = s.join(', ');
+      $('#u-scope-sum').innerHTML = s.length ? 'Phạm vi: <b>' + esc(scopeText(ps)) + '</b> · ' + scopeCount(ps) + ' bộ phận' : '<span style="color:var(--crit)">Chưa chọn phạm vi.</span>';
+    };
+    $$('.u-sc').forEach(function (i) { i.onchange = sync; });
+    $('#u-vt').onchange = sync; sync();
+    bindPinFields();
+    $('#u-cancel').onclick = function () { $('#u-form').innerHTML = ''; };
+    if (isNew) $('#u-ma').focus(); else $('#u-ten').focus();
+    $('#f-user').onsubmit = function (ev) {
+      ev.preventDefault();
+      var body;
+      try {
+        var vt = $('#u-vt').value, s = sel();
+        if (vt === 'NHAP' && !s.length) throw new Error('Chọn phạm vi nhập liệu.');
+        body = { moi: isNew, ma: (isNew ? $('#u-ma').value : u.ma).trim().toUpperCase(), ten: $('#u-ten').value.trim(), vaiTro: vt,
+          phamVi: vt === 'NHAP' ? (s.indexOf('*') >= 0 ? '*' : s.join(', ')) : '*', dangDung: $('#u-dd').checked, ghiChu: $('#u-gc').value.trim(), pin: readPin(isNew) };
+        if (!body.ma) throw new Error('Nhập mã người dùng.');
+        if (!body.ten) throw new Error('Nhập họ tên.');
+      } catch (e) { toast(e.message, 'err'); return; }
+      var btn = $('#f-user button[type=submit]'); btn.disabled = true;
+      api('userSave', body).then(function (d) { U.users = d.users; U.scope = d.scope; renderUsers(d.msg); toast(d.msg, 'ok'); })
+        .catch(function (e) { btn.disabled = false; toast(e.message, 'err'); });
+    };
+  }
+
+  function viewDoiPin() {
+    $('#main').innerHTML = '<div class="page-head"><div><h1>Đổi PIN</h1><div class="sub">Tài khoản ' + esc(S.user.ma) + ' · ' + esc(S.user.ten) + '</div></div></div>' +
+      '<div class="card" style="max-width:460px"><form id="f-pin" autocomplete="off"><label class="fld">PIN hiện tại<input class="input" id="p-cur" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password"></label>' +
+      '<div style="margin-top:12px">' + pinFields(true) + '</div><div class="muted" style="margin-top:10px;font-size:12.5px">PIN gồm đúng 6 chữ số, không dùng 6 số giống nhau hoặc dãy liên tiếp (123456). Không chia sẻ PIN cho người khác.</div>' +
+      '<div style="margin-top:14px"><button class="btn primary" type="submit">Đổi PIN</button></div></form></div>';
+    bindPinFields();
+    $('#u-rand').style.display = 'none';
+    $('#p-cur').focus();
+    $('#f-pin').onsubmit = function (ev) {
+      ev.preventDefault();
+      var pin;
+      try { if (!$('#p-cur').value) throw new Error('Nhập PIN hiện tại.'); pin = readPin(true); } catch (e) { toast(e.message, 'err'); return; }
+      api('changePin', { pinCu: $('#p-cur').value, pinMoi: pin }).then(function (d) {
+        toast(d.msg, 'ok'); $('#f-pin').reset(); go('#/' + (S.user.vaiTro === 'NHAP' ? 'nhap' : 'dashboard'));
+      }).catch(function (e) { toast(e.message, 'err'); });
+    };
   }
 
   // ---------- Khởi động ----------

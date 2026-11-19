@@ -34,7 +34,7 @@ var Demo = (function () {
     ['NM2-VP', 'Thống kê NM2 – Văn phòng', 'NHAP', 'NM2-VP'],
     ['NM2-X1', 'Thống kê NM2 – Xưởng 1', 'NHAP', 'NM2-X1'],
     ['NM2-X2', 'Thống kê NM2 – Xưởng 2', 'NHAP', 'NM2-X2']
-  ].forEach(function (u) { users[u[0]] = { ten: u[1], vaiTro: u[2], phamVi: u[3] }; });
+  ].forEach(function (u) { users[u[0]] = { ten: u[1], vaiTro: u[2], phamVi: u[3], pin: '123456', dangDung: true, ghiChu: '' }; });
   var cfg = { GIO_CHOT: '23:59', CHO_SUA_TRONG_NGAY: 'TRUE', NGAY_NGHI_TUAN: 'CN', NGUONG_DO: '0.9', NGUONG_VANG: '0.95' };
   var records = [], logs = [], sessions = {};
 
@@ -135,13 +135,53 @@ var Demo = (function () {
   }
   function adminDay(d) { var I = ix(); return { ok: true, ngay: d, thu: C.thuDayDu(d), rows: I.active.map(function (bp) { return rowOf(I, bp, d); }) }; }
 
+  function pinError(pin) {
+    pin = String(pin || '');
+    if (!/^\d{6}$/.test(pin)) return 'PIN phải gồm đúng 6 chữ số.';
+    if (/^(\d)\1{5}$/.test(pin)) return 'PIN không được gồm 6 chữ số giống nhau.';
+    if ('0123456789'.indexOf(pin) >= 0 || '9876543210'.indexOf(pin) >= 0) return 'PIN không được là dãy số liên tiếp (VD 123456).';
+    return '';
+  }
+  function scopeOptions() {
+    var I = ix(), xs = [];
+    I.active.forEach(function (bp) { if (bp.xuong && xs.indexOf(bp.xuong) < 0) xs.push(bp.xuong); });
+    return { donVi: I.donVis.slice(), xuong: xs.sort().map(function (x) { return { ma: x, ten: C.tenXuong(x), soBP: I.active.filter(function (b) { return b.xuong === x; }).length }; }),
+      boPhan: I.active.map(function (bp) { return { ma: bp.maBP, ten: bp.boPhan, xuong: bp.xuong, donVi: bp.donVi }; }) };
+  }
+  function userList() {
+    return { ok: true, scope: scopeOptions(), users: Object.keys(users).map(function (ma) {
+      var u = users[ma]; return { ma: ma, ten: u.ten, vaiTro: u.vaiTro, phamVi: u.phamVi, coPin: !!u.pin, dangDung: u.dangDung, ghiChu: u.ghiChu };
+    }) };
+  }
+  function userSave(admin, q) {
+    var ma = String(q.ma || '').trim().toUpperCase(), ex = users[ma], pin = String(q.pin || '').trim();
+    if (!/^[A-Z0-9][A-Z0-9_-]{1,19}$/.test(ma)) throw new Error('Mã người dùng 2–20 ký tự, chỉ gồm chữ không dấu, số, dấu - hoặc _.');
+    if (!String(q.ten || '').trim()) throw new Error('Nhập họ tên / tên hiển thị.');
+    var vt = String(q.vaiTro || '').toUpperCase(); if (['ADMIN', 'NHAP', 'XEM'].indexOf(vt) < 0) throw new Error('Vai trò không hợp lệ.');
+    var o = scopeOptions(), valid = ['*'].concat(o.donVi, o.xuong.map(function (x) { return x.ma; }), o.boPhan.map(function (b) { return b.ma; }));
+    var tk = String(q.phamVi || '').toUpperCase().split(/[,;\s]+/).filter(Boolean);
+    if (vt !== 'NHAP') tk = ['*'];
+    if (!tk.length) throw new Error('Chọn phạm vi nhập liệu cho người dùng vai trò Nhập liệu.');
+    var bad = tk.filter(function (t) { return valid.indexOf(t) < 0; }); if (bad.length) throw new Error('Phạm vi không có trong DanhMuc: ' + bad.join(', '));
+    if (tk.indexOf('*') >= 0) tk = ['*'];
+    if (pin) { var pe = pinError(pin); if (pe) throw new Error(pe); }
+    if (q.moi && ex) throw new Error('Mã người dùng ' + ma + ' đã tồn tại.');
+    if (!q.moi && !ex) throw new Error('Không tìm thấy người dùng ' + ma + '.');
+    if (q.moi && !pin) throw new Error('Người dùng mới phải có PIN.');
+    var dd = q.dangDung !== false;
+    if (ma === admin.ma && (vt !== 'ADMIN' || !dd)) throw new Error('Không thể tự bỏ quyền Admin hoặc tự khóa tài khoản đang đăng nhập.');
+    users[ma] = { ten: String(q.ten).trim(), vaiTro: vt, phamVi: tk.join(', '), pin: pin || ex.pin, dangDung: dd, ghiChu: String(q.ghiChu || '') };
+    logs.push({ thoiDiem: now().ts, nguoi: nguoi(admin), hanhDong: q.moi ? 'Thêm người dùng' : 'Sửa người dùng', ngay: '', maBP: '', boPhan: ma, truoc: '', sau: users[ma].vaiTro + ' | ' + users[ma].phamVi, lyDo: pin ? 'Đã đặt PIN mới (không lưu PIN)' : '' });
+    return userList();
+  }
+
   function handle(q) {
     generate();
     try {
       var a = q.action, n = now();
       if (a === 'login') {
         var ma = String(q.ma || '').trim().toUpperCase(), u = users[ma];
-        if (!u || String(q.pin) !== '123456') return err('Sai mã người dùng hoặc PIN. (Demo: PIN 123456)');
+        if (!u || !u.dangDung || String(q.pin) !== u.pin) return err('Sai mã người dùng hoặc PIN. (Demo: PIN 123456)');
         var tok = 'demo-' + Math.random().toString(36).slice(2);
         sessions[tok] = { ma: ma, ten: u.ten, vaiTro: u.vaiTro, phamVi: u.phamVi };
         return { ok: true, token: tok, user: sessions[tok], now: n, cfg: cfg };
@@ -176,6 +216,14 @@ var Demo = (function () {
           logs.push({ thoiDiem: n.ts, nguoi: nguoi(s), hanhDong: 'Admin xóa', ngay: dd, maBP: del.maBP, boPhan: del.boPhan, truoc: JSON.stringify(valuesOf(del)), sau: '', lyDo: q.lyDo });
           var bpD = danhMuc.filter(function (b) { return b.maBP === del.maBP; })[0]; if (bpD) C.recalcChain(bpD, recsOf(bpD.maBP), dd);
           return adminDay(dd);
+        case 'userList': need(['ADMIN']); return userList();
+        case 'userSave': need(['ADMIN']); var us = userSave(s, q); us.msg = q.moi ? 'Đã thêm người dùng ' + String(q.ma).toUpperCase() + '.' : 'Đã lưu người dùng ' + String(q.ma).toUpperCase() + (q.pin ? ' và đặt PIN mới.' : '.'); return us;
+        case 'changePin':
+          if (String(q.pinCu) !== users[s.ma].pin) return err('PIN hiện tại không đúng.');
+          var pe = pinError(q.pinMoi); if (pe) return err(pe);
+          users[s.ma].pin = String(q.pinMoi);
+          logs.push({ thoiDiem: n.ts, nguoi: nguoi(s), hanhDong: 'Tự đổi PIN', ngay: '', maBP: '', boPhan: s.ma, truoc: '', sau: '', lyDo: '' });
+          return { ok: true, msg: 'Đã đổi PIN. Lần đăng nhập sau dùng PIN mới.' };
         case 'history': need(['ADMIN']); return { ok: true, rows: logs.slice().reverse().slice(0, Number(q.limit) || 100) };
         default: return err('Yêu cầu không hợp lệ: ' + a);
       }
