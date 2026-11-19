@@ -1,0 +1,16 @@
+name: Kiem tra logic
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Core.gs phai giong js/core.js
+        run: cmp js/core.js apps-script/Core.gs
+      - name: Test loi tinh toan
+        run: node tests/core.test.js
+      - name: Test Apps Script (gia lap)
+        run: node tests/gas.test.js
