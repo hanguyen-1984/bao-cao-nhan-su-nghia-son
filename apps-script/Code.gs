@@ -234,6 +234,9 @@ function route_(req) {
     case 'adminSave': requireRole_(user, ['ADMIN']); return apiAdminSave_(user, req);
     case 'adminDelete': requireRole_(user, ['ADMIN']); return apiAdminDelete_(user, req);
     case 'history': requireRole_(user, ['ADMIN']); return apiHistory_(req);
+    case 'userList': requireRole_(user, ['ADMIN']); return apiUserList_();
+    case 'userSave': requireRole_(user, ['ADMIN']); return apiUserSave_(user, req);
+    case 'changePin': return apiChangePin_(user, req);
     default: throw new Error('Yêu cầu không hợp lệ: ' + a);
   }
 }
@@ -288,7 +291,123 @@ function hashPin_(ma, pin) {
   return bytes.map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
 }
 
-function randomPin_() { return String(Math.floor(100000 + Math.random() * 900000)); }
+function randomPin_() {
+  for (;;) { var p = String(Math.floor(100000 + Math.random() * 900000)); if (!pinError_(p)) return p; }
+}
+
+/** PIN: đúng 6 chữ số, không trùng hết (111111), không dãy liên tiếp (123456, 654321). Trả về chuỗi lỗi hoặc ''. */
+function pinError_(pin) {
+  pin = String(pin || '');
+  if (!/^\d{6}$/.test(pin)) return 'PIN phải gồm đúng 6 chữ số.';
+  if (/^(\d)\1{5}$/.test(pin)) return 'PIN không được gồm 6 chữ số giống nhau.';
+  var up = true, down = true;
+  for (var i = 1; i < 6; i++) {
+    var d = pin.charCodeAt(i) - pin.charCodeAt(i - 1);
+    if (d !== 1) up = false; if (d !== -1) down = false;
+  }
+  if (up || down) return 'PIN không được là dãy số liên tiếp (VD 123456).';
+  return '';
+}
+
+// =====================================================================
+// QUẢN LÝ NGƯỜI DÙNG (Admin) & ĐỔI PIN
+// =====================================================================
+var VAI_TRO = ['ADMIN', 'NHAP', 'XEM'];
+
+function userRows_() {
+  var sh = sheet_(SH.ND), vals = sh.getDataRange().getValues(), out = [];
+  for (var i = 1; i < vals.length; i++) {
+    var ma = String(vals[i][0] || '').trim().toUpperCase();
+    if (!ma) continue;
+    out.push({ _row: i + 1, ma: ma, ten: String(vals[i][1] || ''), vaiTro: String(vals[i][2] || '').trim().toUpperCase(),
+      phamVi: String(vals[i][3] || ''), coPin: !!String(vals[i][4] || ''), dangDung: NSCore.boolCfg(vals[i][5], true), ghiChu: String(vals[i][6] || '') });
+  }
+  return out;
+}
+
+/** Các mã phạm vi hợp lệ lấy từ DanhMuc: *, đơn vị, xưởng, mã bộ phận. */
+function scopeOptions_() {
+  var ix = NSCore.buildIndex({ danhMuc: loadDanhMuc_(), records: [], cfg: {}, ngayNghi: [] });
+  var xs = [];
+  ix.active.forEach(function (bp) { if (bp.xuong && xs.indexOf(bp.xuong) < 0) xs.push(bp.xuong); });
+  return {
+    donVi: ix.donVis.slice(),
+    xuong: xs.sort().map(function (x) { return { ma: x, ten: NSCore.tenXuong(x), soBP: ix.active.filter(function (b) { return b.xuong === x; }).length }; }),
+    boPhan: ix.active.map(function (bp) { return { ma: bp.maBP, ten: bp.boPhan, xuong: bp.xuong, donVi: bp.donVi }; })
+  };
+}
+
+function apiUserList_() {
+  return { ok: true, users: userRows_().map(function (u) { delete u._row; return u; }), scope: scopeOptions_() };
+}
+
+function apiUserSave_(admin, req) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var ma = String(req.ma || '').trim().toUpperCase(), isNew = !!req.moi;
+    if (!/^[A-Z0-9][A-Z0-9_-]{1,19}$/.test(ma)) throw new Error('Mã người dùng 2–20 ký tự, chỉ gồm chữ không dấu, số, dấu - hoặc _.');
+    var ten = String(req.ten || '').trim().slice(0, 80);
+    if (!ten) throw new Error('Nhập họ tên / tên hiển thị.');
+    var vaiTro = String(req.vaiTro || '').trim().toUpperCase();
+    if (VAI_TRO.indexOf(vaiTro) < 0) throw new Error('Vai trò không hợp lệ.');
+    var opts = scopeOptions_(), valid = ['*'].concat(opts.donVi).concat(opts.xuong.map(function (x) { return x.ma; })).concat(opts.boPhan.map(function (b) { return b.ma; }));
+    var tokens = String(req.phamVi || '').toUpperCase().split(/[,;\s]+/).map(function (t) { return t.trim(); }).filter(Boolean);
+    tokens = tokens.filter(function (t, i) { return tokens.indexOf(t) === i; });
+    if (vaiTro !== 'NHAP') tokens = ['*'];
+    if (!tokens.length) throw new Error('Chọn phạm vi nhập liệu cho người dùng vai trò Nhập liệu.');
+    var bad = tokens.filter(function (t) { return valid.indexOf(t) < 0; });
+    if (bad.length) throw new Error('Phạm vi không có trong DanhMuc: ' + bad.join(', '));
+    if (tokens.indexOf('*') >= 0) tokens = ['*'];
+    var dangDung = req.dangDung !== false, ghiChu = sanitize_(String(req.ghiChu || '').slice(0, 200));
+    var pin = String(req.pin || '').trim();
+    if (pin) { var pe = pinError_(pin); if (pe) throw new Error(pe); }
+
+    var list = userRows_(), ex = null;
+    list.forEach(function (u) { if (u.ma === ma) ex = u; });
+    if (isNew && ex) throw new Error('Mã người dùng ' + ma + ' đã tồn tại.');
+    if (!isNew && !ex) throw new Error('Không tìm thấy người dùng ' + ma + '.');
+    if (isNew && !pin) throw new Error('Người dùng mới phải có PIN.');
+    if (ex && ma === admin.ma && (vaiTro !== 'ADMIN' || !dangDung)) throw new Error('Không thể tự bỏ quyền Admin hoặc tự khóa tài khoản đang đăng nhập.');
+    var conLaiAdmin = list.filter(function (u) { return u.ma !== ma && u.vaiTro === 'ADMIN' && u.dangDung; }).length + (vaiTro === 'ADMIN' && dangDung ? 1 : 0);
+    if (!conLaiAdmin) throw new Error('Hệ thống phải còn ít nhất 1 tài khoản Admin đang dùng.');
+
+    var sh = sheet_(SH.ND), now = nowVN_(), phamVi = tokens.join(', ');
+    var tomTat = function (u) { return u ? [u.ten, u.vaiTro, u.phamVi, u.dangDung ? 'Đang dùng' : 'Khóa'].join(' | ') : ''; };
+    var after = { ten: ten, vaiTro: vaiTro, phamVi: phamVi, dangDung: dangDung };
+    if (isNew) {
+      sh.getRange(sh.getLastRow() + 1, 1, 1, ND_COLS.length).setValues([[ma, ten, vaiTro, phamVi, hashPin_(ma, pin), dangDung, ghiChu]]);
+      try { sh.getRange(sh.getLastRow(), 6).insertCheckboxes(); } catch (e) { /* bỏ qua */ }
+    } else {
+      sh.getRange(ex._row, 2, 1, 3).setValues([[ten, vaiTro, phamVi]]);
+      sh.getRange(ex._row, 6, 1, 2).setValues([[dangDung, ghiChu]]);
+      if (pin) sh.getRange(ex._row, 5).setValue(hashPin_(ma, pin));
+    }
+    if (pin) CacheService.getScriptCache().remove('F:' + ma);
+    log_([[now.ts, nguoi_(admin), isNew ? 'Thêm người dùng' : (pin ? 'Sửa người dùng + đặt PIN' : 'Sửa người dùng'), '', '', ma,
+      tomTat(ex), tomTat(after), pin ? 'Đã đặt PIN mới (không lưu PIN)' : '']]);
+    var res = apiUserList_();
+    res.msg = isNew ? 'Đã thêm người dùng ' + ma + '.' : 'Đã lưu người dùng ' + ma + (pin ? ' và đặt PIN mới.' : '.');
+    return res;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function apiChangePin_(user, req) {
+  var cur = String(req.pinCu || '').trim(), pin = String(req.pinMoi || '').trim();
+  var u = findUser_(user.ma);
+  var cache = CacheService.getScriptCache(), fk = 'F:' + user.ma, fails = Number(cache.get(fk) || 0);
+  if (fails >= 5) throw new Error('Sai PIN quá 5 lần. Thử lại sau 15 phút hoặc nhờ Nhân sự đặt lại PIN.');
+  if (!u || u.pinHash !== hashPin_(user.ma, cur)) { cache.put(fk, String(fails + 1), 900); throw new Error('PIN hiện tại không đúng.'); }
+  var pe = pinError_(pin); if (pe) throw new Error(pe);
+  if (pin === cur) throw new Error('PIN mới phải khác PIN hiện tại.');
+  var rows = userRows_();
+  for (var i = 0; i < rows.length; i++) if (rows[i].ma === user.ma) sheet_(SH.ND).getRange(rows[i]._row, 5).setValue(hashPin_(user.ma, pin));
+  cache.remove(fk);
+  log_([[ts_(), nguoi_(user), 'Tự đổi PIN', '', '', user.ma, '', '', '']]);
+  return { ok: true, msg: 'Đã đổi PIN. Lần đăng nhập sau dùng PIN mới.' };
+}
 
 // ---------------- Nhập liệu (chỉ ngày hôm nay) ----------------
 function isLocked_(cfg, now) {
