@@ -8,14 +8,20 @@
 var NSCore = (function () {
   'use strict';
 
-  var VANG = ['phepNam', 'khongPhep', 'om', 'thaiSan', 'viecRieng'];
+  // Cấu trúc v2 (11/2026): Nghỉ phép tách chính thức/thời vụ (= tổng vắng), thêm Tăng cường (đi/đến) và Số giờ tăng ca.
+  var VANG = ['vangBC', 'vangTV'];
+  var TANG_CUONG = ['diTC', 'denTC'];
   var BIEN_DONG = ['moiBC', 'moiTV', 'nvBC', 'nvTV'];
-  var FIELDS = VANG.concat(BIEN_DONG).concat(['tangCa']);
+  var TANG_CA = ['tangCa', 'gioTC'];
+  var FIELDS = VANG.concat(TANG_CUONG).concat(BIEN_DONG).concat(TANG_CA);
+  var DECIMAL_FIELDS = ['gioTC']; // được nhập số lẻ (bước 0,5 giờ)
   var LABELS = {
-    phepNam: 'Phép năm', khongPhep: 'Nghỉ không phép', om: 'Nghỉ ốm', thaiSan: 'Thai sản',
-    viecRieng: 'Việc riêng', moiBC: 'Mới (chính thức)', moiTV: 'Mới (thời vụ)',
-    nvBC: 'Nghỉ việc (chính thức)', nvTV: 'Nghỉ việc (thời vụ)', tangCa: 'Tăng ca (người)'
+    vangBC: 'Nghỉ phép (chính thức)', vangTV: 'Nghỉ phép (thời vụ)', diTC: 'Đi tăng cường', denTC: 'Đến tăng cường',
+    moiBC: 'Mới (chính thức)', moiTV: 'Mới (thời vụ)', nvBC: 'Nghỉ việc (chính thức)', nvTV: 'Nghỉ việc (thời vụ)',
+    tangCa: 'Tăng ca (người)', gioTC: 'Tăng ca (giờ)'
   };
+  /** Các cột vắng của cấu trúc cũ (v1) – chỉ để đọc dữ liệu cũ chưa chuyển đổi. */
+  var VANG_V1 = ['phepNam', 'khongPhep', 'om', 'thaiSan', 'viecRieng'];
   var THU = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
   var THU_DAY_DU = ['Chủ nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
 
@@ -47,6 +53,14 @@ var NSCore = (function () {
   function fmtPct(x, digits) {
     if (x === null || x === undefined || x === '' || isNaN(x)) return '';
     return (x * 100).toFixed(digits === undefined ? 1 : digits).replace('.', ',') + '%';
+  }
+  /** Số có thể lẻ (giờ tăng ca): 1.234,5 */
+  function fmtNum(n, digits) {
+    if (n === null || n === undefined || n === '' || isNaN(n)) return '';
+    var f = Math.pow(10, digits === undefined ? 1 : digits), x = Math.round(Number(n) * f) / f, neg = x < 0;
+    x = Math.abs(x);
+    var i = Math.floor(x), dec = Math.round((x - i) * f);
+    return (neg ? '−' : '') + fmtInt(i) + (dec ? ',' + String(dec + f).slice(1).replace(/0+$/, '') : '');
   }
   function fmtDelta(pp) {
     if (pp === null || pp === undefined || isNaN(pp)) return '';
@@ -167,17 +181,26 @@ var NSCore = (function () {
 
   function num(v) { var n = Number(v); return isNaN(n) ? 0 : n; }
 
+  function blank(v) { return v === undefined || v === null || v === ''; }
   function derive(r) {
     var o = {};
     o.bcDau = num(r.bcDau); o.tvDau = num(r.tvDau);
     FIELDS.forEach(function (f) { o[f] = num(r[f]); });
+    // Bản ghi cấu trúc cũ (chưa chuyển đổi): cộng các loại vắng vào Nghỉ phép chính thức
+    if (blank(r.vangBC) && blank(r.vangTV) && VANG_V1.some(function (f) { return !blank(r[f]); })) {
+      o.vangBC = VANG_V1.reduce(function (s, f) { return s + num(r[f]); }, 0);
+    }
     o.tongDau = o.bcDau + o.tvDau;
     o.moi = o.moiBC + o.moiTV;
     o.nghiViec = o.nvBC + o.nvTV;
+    o.qsBC = o.bcDau + o.moiBC - o.nvBC;
+    o.qsTV = o.tvDau + o.moiTV - o.nvTV;
     o.quanSo = o.tongDau + o.moi - o.nghiViec;
-    o.tongVang = VANG.reduce(function (s, f) { return s + o[f]; }, 0);
+    o.tongVang = o.vangBC + o.vangTV;
     o.hienDien = o.quanSo - o.tongVang;
     o.tyLe = o.quanSo > 0 ? o.hienDien / o.quanSo : null;
+    // Tăng cường chỉ ghi nhận, không tính vào tỷ lệ chuyên cần
+    o.thucTe = o.hienDien - o.diTC + o.denTC;
     return o;
   }
 
@@ -188,30 +211,39 @@ var NSCore = (function () {
     FIELDS.forEach(function (f) {
       var v = raw ? raw[f] : undefined;
       if (v === '' || v === null || v === undefined) { errors.push(LABELS[f] + ': chưa nhập (không có thì ghi 0)'); return; }
-      var n = Number(String(v).trim());
-      if (!isFinite(n) || Math.floor(n) !== n) { errors.push(LABELS[f] + ': phải là số nguyên'); return; }
+      var n = Number(String(v).trim().replace(',', '.'));
+      if (DECIMAL_FIELDS.indexOf(f) >= 0) {
+        if (!isFinite(n) || Math.round(n * 2) !== n * 2) { errors.push(LABELS[f] + ': phải là số, bước 0,5 giờ'); return; }
+      } else if (!isFinite(n) || Math.floor(n) !== n) { errors.push(LABELS[f] + ': phải là số nguyên'); return; }
       if (n < 0) { errors.push(LABELS[f] + ': không được âm'); return; }
-      if (n > 9999) { errors.push(LABELS[f] + ': số quá lớn'); return; }
+      if (n > 99999) { errors.push(LABELS[f] + ': số quá lớn'); return; }
       values[f] = n;
     });
     values.ghiChu = raw && raw.ghiChu ? String(raw.ghiChu).slice(0, 500) : '';
     if (errors.length) return { values: values, derived: null, errors: errors, warnings: warnings };
-    var d = derive({ bcDau: base.bc, tvDau: base.tv, phepNam: values.phepNam, khongPhep: values.khongPhep, om: values.om,
-      thaiSan: values.thaiSan, viecRieng: values.viecRieng, moiBC: values.moiBC, moiTV: values.moiTV,
-      nvBC: values.nvBC, nvTV: values.nvTV, tangCa: values.tangCa });
+    var inp = { bcDau: base.bc, tvDau: base.tv };
+    FIELDS.forEach(function (f) { inp[f] = values[f]; });
+    var d = derive(inp);
     if (values.nvBC > num(base.bc) + values.moiBC) errors.push('Nghỉ việc chính thức (' + values.nvBC + ') lớn hơn quân số chính thức (' + (num(base.bc) + values.moiBC) + ')');
     if (values.nvTV > num(base.tv) + values.moiTV) errors.push('Nghỉ việc thời vụ (' + values.nvTV + ') lớn hơn quân số thời vụ (' + (num(base.tv) + values.moiTV) + ')');
-    if (d.tongVang > d.quanSo) errors.push('Tổng vắng (' + d.tongVang + ') lớn hơn quân số trong ngày (' + d.quanSo + ')');
     if (!errors.length) {
-      if (d.tangCa > d.hienDien) warnings.push('Tăng ca (' + d.tangCa + ') nhiều hơn số hiện diện (' + d.hienDien + ')');
+      if (d.vangBC > d.qsBC) errors.push('Nghỉ phép chính thức (' + d.vangBC + ') lớn hơn quân số chính thức (' + d.qsBC + ')');
+      if (d.vangTV > d.qsTV) errors.push('Nghỉ phép thời vụ (' + d.vangTV + ') lớn hơn quân số thời vụ (' + d.qsTV + ')');
+      if (d.diTC > d.hienDien) errors.push('Đi tăng cường (' + d.diTC + ') nhiều hơn số hiện diện (' + d.hienDien + ')');
+      if (d.gioTC > 0 && d.tangCa === 0) errors.push('Có số giờ tăng ca nhưng số người tăng ca bằng 0');
+    }
+    if (!errors.length) {
+      if (d.tangCa > d.thucTe) warnings.push('Tăng ca (' + d.tangCa + ') nhiều hơn số người thực tế làm việc (' + d.thucTe + ')');
+      if (d.tangCa > 0 && d.gioTC === 0) warnings.push('Chưa nhập số giờ tăng ca');
+      if (d.tangCa > 0 && d.gioTC > d.tangCa * 12) warnings.push('Giờ tăng ca bình quân ' + fmtNum(d.gioTC / d.tangCa) + ' giờ/người – kiểm tra lại');
       if (d.tyLe !== null && d.tyLe < nguongDo(cfg)) warnings.push('Tỷ lệ chuyên cần ' + fmtPct(d.tyLe) + ' dưới ngưỡng ' + fmtPct(nguongDo(cfg), 0));
     }
     return { values: values, derived: d, errors: errors, warnings: warnings };
   }
 
   // ---------- Cộng dồn ----------
-  var SUM_KEYS = ['bcDau', 'tvDau', 'tongDau', 'moiBC', 'moiTV', 'moi', 'nvBC', 'nvTV', 'nghiViec', 'quanSo',
-    'phepNam', 'khongPhep', 'om', 'thaiSan', 'viecRieng', 'tongVang', 'hienDien', 'tangCa'];
+  var SUM_KEYS = ['bcDau', 'tvDau', 'tongDau', 'moiBC', 'moiTV', 'moi', 'nvBC', 'nvTV', 'nghiViec', 'qsBC', 'qsTV', 'quanSo',
+    'vangBC', 'vangTV', 'tongVang', 'hienDien', 'diTC', 'denTC', 'thucTe', 'tangCa', 'gioTC'];
   function emptyAgg() { var a = { soBP: 0 }; SUM_KEYS.forEach(function (k) { a[k] = 0; }); return a; }
   function addAgg(a, d) { SUM_KEYS.forEach(function (k) { a[k] += num(d[k]); }); a.soBP++; return a; }
   function finishAgg(a) { a.tyLe = a.quanSo > 0 ? a.hienDien / a.quanSo : null; return a; }
@@ -221,7 +253,6 @@ var NSCore = (function () {
     var out = [];
     if (d.tyLe < nguongDo(cfg)) out.push('Dưới ' + fmtPct(nguongDo(cfg), 0));
     else if (d.tyLe < nguongVang(cfg)) out.push('Dưới ' + fmtPct(nguongVang(cfg), 0));
-    if (d.khongPhep > 0) out.push('Có nghỉ không phép');
     return out.join(' | ');
   }
   function mucDo(d, cfg) {
@@ -335,8 +366,8 @@ var NSCore = (function () {
       if (g.nhom === 'tong' || g.soBP === 0) return;
       L.push('• ' + g.label + ': ' + fmtInt(g.hienDien) + '/' + fmtInt(g.quanSo) + ' (' + fmtPct(g.tyLe) + ')');
     });
-    L.push('Vắng ' + fmtInt(t.tongVang) + ': phép năm ' + t.phepNam + ', không phép ' + t.khongPhep + ', ốm ' + t.om +
-      ', thai sản ' + t.thaiSan + ', việc riêng ' + t.viecRieng);
+    L.push('Nghỉ phép ' + fmtInt(t.tongVang) + ': chính thức ' + fmtInt(t.vangBC) + ', thời vụ ' + fmtInt(t.vangTV));
+    if (t.diTC || t.denTC) L.push('Tăng cường: đi ' + fmtInt(t.diTC) + ', đến ' + fmtInt(t.denTC) + ' → thực tế làm việc ' + fmtInt(t.thucTe));
     var bd = 'Nhân sự mới ' + t.moi + ', nghỉ việc ' + t.nghiViec;
     if (rep.bienDong.length) {
       var parts = rep.bienDong.slice(0, 8).map(function (b) {
@@ -347,7 +378,7 @@ var NSCore = (function () {
     }
     L.push(bd);
     L.push('Lũy kế tháng: mới ' + rep.luyKeThang.moi + ', nghỉ việc ' + rep.luyKeThang.nghiViec);
-    L.push('Tăng ca: ' + fmtInt(t.tangCa) + ' người');
+    L.push('Tăng ca: ' + fmtInt(t.tangCa) + ' người, ' + fmtNum(t.gioTC) + ' giờ');
     var low = rep.rows.filter(function (r) { return r.mucDo === 'do'; });
     if (low.length) L.push('Chuyên cần thấp: ' + low.map(function (r) { return r.boPhan + ' ' + fmtPct(r.tyLe); }).join('; '));
     if (rep.chuaNhap.length) L.push('Chưa nhập: ' + rep.chuaNhap.join(', '));
@@ -406,7 +437,7 @@ var NSCore = (function () {
     });
     var vangTheoDonVi = defs.map(function (g) {
       var a = aggDay(ix, ymd, g.filter), o = { key: g.key, label: g.label };
-      VANG.forEach(function (f) { o[f] = a[f]; });
+      VANG.concat(TANG_CUONG).concat(TANG_CA).forEach(function (f) { o[f] = a[f]; });
       return o;
     });
     var thap = rep.rows.filter(function (r) { return r.daNhap && r.tyLe !== null; })
@@ -417,7 +448,7 @@ var NSCore = (function () {
       tong: rep.groups[rep.groups.length - 1], groups: rep.groups, xuong: rep.xuong, chuaNhap: rep.chuaNhap,
       bienDong: rep.bienDong, luyKeThang: rep.luyKeThang, trend: trend, nhomDefs: defs.map(function (g) { return { key: g.key, label: g.label }; }),
       vangTheoDonVi: vangTheoDonVi, thapNhat: thap, banTin: rep.banTin,
-      thang: { tyLe: thang.tong.tyLe, soNgay: thang.tong.soNgay, khongPhep: thang.tong.khongPhep, tangCa: thang.tong.tangCa }
+      thang: { tyLe: thang.tong.tyLe, soNgay: thang.tong.soNgay, tongVang: thang.tong.tongVang, tangCa: thang.tong.tangCa, gioTC: thang.tong.gioTC }
     };
   }
 
@@ -447,9 +478,9 @@ var NSCore = (function () {
   }
 
   return {
-    VANG: VANG, BIEN_DONG: BIEN_DONG, FIELDS: FIELDS, LABELS: LABELS,
+    VANG: VANG, TANG_CUONG: TANG_CUONG, BIEN_DONG: BIEN_DONG, TANG_CA: TANG_CA, FIELDS: FIELDS, DECIMAL_FIELDS: DECIMAL_FIELDS, LABELS: LABELS, VANG_V1: VANG_V1,
     isYmd: isYmd, addDays: addDays, weekday: weekday, thu: thu, thuDayDu: thuDayDu, fmtDate: fmtDate, monthDays: monthDays,
-    fmtInt: fmtInt, fmtPct: fmtPct, fmtDelta: fmtDelta, boolCfg: boolCfg, nguongDo: nguongDo, nguongVang: nguongVang,
+    fmtInt: fmtInt, fmtNum: fmtNum, fmtPct: fmtPct, fmtDelta: fmtDelta, boolCfg: boolCfg, nguongDo: nguongDo, nguongVang: nguongVang,
     inScope: inScope, normXuong: normXuong, tenXuong: tenXuong, buildIndex: buildIndex, isWorkingDay: isWorkingDay, prevDataDate: prevDataDate, lastDataDate: lastDataDate,
     recordOf: recordOf, computeBase: computeBase, baseFor: baseFor, derive: derive, validateEntry: validateEntry,
     dailyReport: dailyReport, monthlyReport: monthlyReport, dashboard: dashboard, entryStatus: entryStatus,

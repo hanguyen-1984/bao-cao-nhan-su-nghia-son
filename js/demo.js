@@ -50,15 +50,16 @@ var Demo = (function () {
   function genRecord(bp, d, ts, who) {
     var base = C.computeBase(bp, recsOf(bp.maBP), d), qs = base.bc + base.tv, sx = SX.test(bp.boPhan);
     var r = { ngay: d, maBP: bp.maBP, donVi: bp.donVi, xuong: bp.xuong, boPhan: bp.boPhan, bcDau: base.bc, tvDau: base.tv,
-      phepNam: 0, khongPhep: 0, om: 0, thaiSan: 0, viecRieng: 0, moiBC: 0, moiTV: 0, nvBC: 0, nvTV: 0, tangCa: 0,
+      vangBC: 0, vangTV: 0, diTC: 0, denTC: 0, moiBC: 0, moiTV: 0, nvBC: 0, nvTV: 0, tangCa: 0, gioTC: 0,
       ghiChu: '', nguoiNhap: who, thoiDiem: ts, lanSua: 0, nguon: 'FORM' };
     if (qs > 0) {
       var p = (sx ? 0.055 : 0.025) * (0.4 + R() * 1.4), vang = Math.min(qs - 1, Math.round(qs * p + (R() < 0.3 ? R() * 2 : 0)));
-      var w = [['phepNam', 0.28], ['khongPhep', 0.1], ['om', 0.34], ['thaiSan', 0.1], ['viecRieng', 0.18]];
-      for (var i = 0; i < vang; i++) { var x = R(), acc = 0; for (var j = 0; j < w.length; j++) { acc += w[j][1]; if (x <= acc) { r[w[j][0]]++; break; } } }
+      for (var i = 0; i < vang; i++) { if (base.tv > 0 && R() < base.tv / qs && r.vangTV < base.tv) r.vangTV++; else if (r.vangBC < base.bc) r.vangBC++; else if (r.vangTV < base.tv) r.vangTV++; }
+      if (sx && R() < 0.12) r.diTC = Math.min(qs - vang, 1 + Math.floor(R() * 3));
+      if (sx && R() < 0.12) r.denTC = 1 + Math.floor(R() * 3);
       if (sx && R() < 0.05) { if (base.tv > 0 || R() < 0.5) r.moiTV = 1 + Math.floor(R() * 2); else r.moiBC = 1; }
       if (sx && R() < 0.04) { if (base.tv > 0) r.nvTV = 1; else if (base.bc > 0) r.nvBC = 1; }
-      if (sx && R() < 0.55) r.tangCa = Math.round((qs - vang) * (0.2 + R() * 0.4));
+      if (sx && R() < 0.55) { r.tangCa = Math.round((qs - vang) * (0.2 + R() * 0.4)); r.gioTC = r.tangCa * (R() < 0.6 ? 2 : 3) - (R() < 0.2 ? 0.5 : 0); if (r.gioTC < 0) r.gioTC = 0; }
     }
     return r;
   }

@@ -5,7 +5,7 @@ const dm = [
   {maBP:'NM1-02', donVi:'NM1', xuong:'NM1-X1', boPhan:'NM1 - KHO THANH BÌNH', bcGoc:2, tvGoc:31, apDung:'', rieng:true, dangDung:true},
   {maBP:'NM2-01', donVi:'NM2', xuong:'NM2-X2', boPhan:'NM2 - SƠ CHẾ', bcGoc:22, tvGoc:12, apDung:'', rieng:false, dangDung:true},
 ];
-const z = {phepNam:0,khongPhep:0,om:0,thaiSan:0,viecRieng:0,moiBC:0,moiTV:0,nvBC:0,nvTV:0,tangCa:0};
+const z = {vangBC:0,vangTV:0,diTC:0,denTC:0,moiBC:0,moiTV:0,nvBC:0,nvTV:0,tangCa:0,gioTC:0};
 const rec = (ngay, maBP, bcDau, tvDau, v) => Object.assign({ngay, maBP, bcDau, tvDau}, z, v);
 // dates
 assert.equal(C.thu('2026-11-17'), 'T3'); assert.equal(C.addDays('2026-11-30',1),'2026-12-01'); assert.equal(C.monthDays('2026-02').length, 28);
@@ -27,24 +27,33 @@ let b = C.computeBase(dm[0], recs, '2026-11-17'); assert.deepEqual([b.bc,b.tv],[
 b = C.computeBase(dm[0], recs, '2026-11-16'); assert.deepEqual([b.bc,b.tv],[34,4]); // same-day not counted
 b = C.computeBase(Object.assign({}, dm[0], {apDung:'2026-11-17', bcGoc:40}), recs, '2026-11-18'); assert.equal(b.bc, 40);
 // validate
-let v = C.validateEntry({phepNam:'1',khongPhep:'0',om:'2',thaiSan:'0',viecRieng:'0',moiBC:'0',moiTV:'0',nvBC:'0',nvTV:'0',tangCa:'5'}, {bc:34,tv:4}, {});
-assert.equal(v.errors.length, 0); assert.equal(v.derived.hienDien, 35); assert.equal(v.derived.quanSo, 38);
-v = C.validateEntry({phepNam:'',khongPhep:'0'}, {bc:34,tv:4}, {}); assert.ok(v.errors.length >= 9);
-v = C.validateEntry(Object.assign({}, z, {om:50}), {bc:34,tv:4}, {}); assert.ok(v.errors.some(e=>/Tổng vắng/.test(e)));
+let v = C.validateEntry({vangBC:'2',vangTV:'1',diTC:'3',denTC:'1',moiBC:'0',moiTV:'0',nvBC:'0',nvTV:'0',tangCa:'5',gioTC:'12,5'}, {bc:34,tv:4}, {});
+assert.equal(v.errors.length, 0, v.errors.join()); assert.equal(v.derived.hienDien, 35); assert.equal(v.derived.quanSo, 38);
+assert.equal(v.derived.thucTe, 33); assert.equal(v.values.gioTC, 12.5); assert.equal(v.derived.tyLe, 35/38, 'tăng cường không tính vào tỷ lệ');
+v = C.validateEntry(Object.assign({}, z, {gioTC:'1.3', tangCa:1}), {bc:34,tv:4}, {}); assert.ok(v.errors.some(e=>/0,5 giờ/.test(e)));
+v = C.validateEntry(Object.assign({}, z, {gioTC:4}), {bc:34,tv:4}, {}); assert.ok(v.errors.some(e=>/số người tăng ca/.test(e)));
+v = C.validateEntry(Object.assign({}, z, {tangCa:3}), {bc:34,tv:4}, {}); assert.ok(v.warnings.some(w=>/Chưa nhập số giờ/.test(w)));
+v = C.validateEntry(Object.assign({}, z, {vangTV:5}), {bc:34,tv:4}, {}); assert.ok(v.errors.some(e=>/Nghỉ phép thời vụ/.test(e)));
+v = C.validateEntry(Object.assign({}, z, {diTC:40}), {bc:34,tv:4}, {}); assert.ok(v.errors.some(e=>/Đi tăng cường/.test(e)));
+assert.equal(C.derive({bcDau:10, tvDau:0, phepNam:1, om:2, khongPhep:1}).tongVang, 4, 'đọc được bản ghi cấu trúc cũ');
+assert.equal(C.fmtNum(1234.5), '1.234,5'); assert.equal(C.fmtNum(8), '8');
+v = C.validateEntry({vangBC:'',vangTV:'0'}, {bc:34,tv:4}, {}); assert.ok(v.errors.length >= 9);
+v = C.validateEntry(Object.assign({}, z, {vangBC:50}), {bc:34,tv:4}, {}); assert.ok(v.errors.some(e=>/Nghỉ phép chính thức/.test(e)));
 v = C.validateEntry(Object.assign({}, z, {nvTV:5}), {bc:34,tv:4}, {}); assert.ok(v.errors.some(e=>/thời vụ/.test(e)));
-v = C.validateEntry(Object.assign({}, z, {om:'1.5'}), {bc:34,tv:4}, {}); assert.ok(v.errors.some(e=>/số nguyên/.test(e)));
-v = C.validateEntry(Object.assign({}, z, {om:5}), {bc:34,tv:4}, {}); assert.ok(v.warnings.some(w=>/dưới ngưỡng/.test(w)));
+v = C.validateEntry(Object.assign({}, z, {vangBC:'1.5'}), {bc:34,tv:4}, {}); assert.ok(v.errors.some(e=>/số nguyên/.test(e)));
+v = C.validateEntry(Object.assign({}, z, {vangBC:5}), {bc:34,tv:4}, {}); assert.ok(v.warnings.some(w=>/dưới ngưỡng/.test(w)));
 // reports
 const all = [
-  rec('2026-11-16','NM1-01',34,4,{om:2}), rec('2026-11-16','NM1-02',2,31,{phepNam:1}), rec('2026-11-16','NM2-01',22,12,{khongPhep:4, moiTV:1}),
-  rec('2026-11-17','NM1-01',34,4,{om:1, nvBC:1}), rec('2026-11-17','NM2-01',22,13,{}),
+  rec('2026-11-16','NM1-01',34,4,{vangBC:2}), rec('2026-11-16','NM1-02',2,31,{vangTV:1}), rec('2026-11-16','NM2-01',22,12,{vangBC:4, moiTV:1}),
+  rec('2026-11-17','NM1-01',34,4,{vangBC:1, nvBC:1, diTC:2, tangCa:4, gioTC:8}), rec('2026-11-17','NM2-01',22,13,{denTC:2}),
 ];
 const ix = C.buildIndex({danhMuc:dm, records:all, cfg:{NGUONG_DO:0.9, NGUONG_VANG:0.95}, ngayNghi:[]});
 const r = C.dailyReport(ix, '2026-11-17');
 const tot = r.groups.find(g=>g.key==='ALL');
 assert.equal(r.daNhap, 2); assert.equal(r.tongBP, 3); assert.deepEqual(r.chuaNhap, ['NM1 - KHO THANH BÌNH']);
 assert.equal(tot.quanSo, 38-1 + 35); assert.equal(tot.hienDien, 36 + 35); 
-assert.equal(r.ngayTruoc, '2026-11-16');
+assert.equal(r.ngayTruoc, '2026-11-16'); assert.equal(tot.thucTe, 36 + 35); assert.equal(tot.gioTC, 8);
+assert.ok(/Tăng cường: đi 2, đến 2/.test(r.banTin) && /4 người, 8 giờ/.test(r.banTin), r.banTin);
 const nm1 = r.groups.find(g=>g.key==='NM1'); assert.equal(nm1.soBP, 1); assert.equal(nm1.soBPTong, 2);
 assert.ok(r.groups.some(g=>g.nhom==='rieng' && /Kho Thanh Bình \(trong NM1\)/.test(g.label)), r.groups.map(g=>g.label).join());
 assert.equal(r.bienDong.length, 1); assert.equal(r.luyKeThang.moi, 1); assert.equal(r.luyKeThang.nghiViec, 1);

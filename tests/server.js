@@ -20,7 +20,7 @@ http.createServer((req, res) => {
   }
   let p = req.url.split('?')[0]; if (p === '/') p = '/index.html';
   if (p === '/js/config.js') {
-    const s = fs.readFileSync(root + p, 'utf8').replace("API_URL: ''", "API_URL: '/exec'");
+    const s = fs.readFileSync(root + p, 'utf8').replace(/API_URL:\s*''/, "API_URL: '/exec'");
     res.writeHead(200, { 'Content-Type': 'text/javascript' }); return res.end(s);
   }
   fs.readFile(root + p, (e, d) => { if (e) { res.writeHead(404); return res.end(); } res.writeHead(200, { 'Content-Type': types[path.extname(p)] || 'application/octet-stream' }); res.end(d); });

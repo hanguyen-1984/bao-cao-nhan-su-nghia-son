@@ -6,7 +6,7 @@
   var C = NSCore, CFG = window.NS_CONFIG || {};
   var S = { user: null, cfg: {}, view: '', charts: [], timer: null, dirty: false, skipRoute: false };
   var E = null; // trạng thái lưới nhập liệu đang mở
-  var fi = C.fmtInt, fp = C.fmtPct, fd = C.fmtDate;
+  var fi = C.fmtInt, fp = C.fmtPct, fd = C.fmtDate, fh = C.fmtNum;
   var COLOR = { NM1: '#77bb6e', NM2: '#800a0a', rieng: '#1e4d2b', tong: '#6b6b6b', extra: ['#c9a227', '#4f9a8a', '#a65f5f'] };
   var ROLE = { ADMIN: 'Quản trị', NHAP: 'Nhập liệu', XEM: 'Chỉ xem' };
 
@@ -181,33 +181,39 @@
   // =====================================================================
   // LƯỚI NHẬP LIỆU (dùng chung cho Nhập liệu hằng ngày và Admin nhập bù)
   // =====================================================================
+  // Cột nhập liệu (cấu trúc v2): Nghỉ phép · Tăng cường · Nhân sự mới · Nghỉ việc · Tăng ca
   var GCOLS = [
-    { f: 'phepNam', h: 'Phép năm', g: 'v' }, { f: 'khongPhep', h: 'Không phép', g: 'v' }, { f: 'om', h: 'Ốm', g: 'v' },
-    { f: 'thaiSan', h: 'Thai sản', g: 'v' },
+    { f: 'vangBC', h: 'Chính thức', g: 'v' }, { f: 'vangTV', h: 'Thời vụ', g: 'v' },
+    { f: 'diTC', h: 'Đi tăng cường', g: 't' }, { f: 'denTC', h: 'Đến tăng cường', g: 't' },
     { f: 'moiBC', h: 'Chính thức', g: 'm' }, { f: 'moiTV', h: 'Thời vụ', g: 'm' }, { f: 'nvBC', h: 'Chính thức', g: 'n' }, { f: 'nvTV', h: 'Thời vụ', g: 'n' },
-    { f: 'tangCa', h: 'Tăng ca', g: '' }
+    { f: 'tangCa', h: 'Số người', g: 'c' }, { f: 'gioTC', h: 'Số giờ', g: 'c' }
   ];
-  var GLABEL = { phepNam: 'Vắng: Phép năm', khongPhep: 'Vắng: Không phép', om: 'Vắng: Ốm', thaiSan: 'Vắng: Thai sản', viecRieng: 'Vắng: Việc riêng',
-    moiBC: 'Mới: Chính thức', moiTV: 'Mới: Thời vụ', nvBC: 'Nghỉ việc: Chính thức', nvTV: 'Nghỉ việc: Thời vụ', tangCa: 'Tăng ca (người)' };
+  var GCLS = { v: 'vang', t: 'tc', m: 'moi', n: 'nghi', c: 'ca' };
+  var GLABEL = { vangBC: 'Nghỉ phép: Chính thức', vangTV: 'Nghỉ phép: Thời vụ', diTC: 'Tăng cường: Đi', denTC: 'Tăng cường: Đến',
+    moiBC: 'Mới: Chính thức', moiTV: 'Mới: Thời vụ', nvBC: 'Nghỉ việc: Chính thức', nvTV: 'Nghỉ việc: Thời vụ', tangCa: 'Tăng ca: Số người', gioTC: 'Tăng ca: Số giờ' };
+  function isDec(f) { return C.DECIMAL_FIELDS.indexOf(f) >= 0; }
+  /** Chuẩn hóa ô số: '12,5' → '12.5', '' → '0'. */
+  function normCell(f, x) { x = String(x === undefined || x === null ? '' : x).trim(); if (x === '') return '0'; return isDec(f) ? String(Number(x.replace(',', '.'))) : x; }
+  function showCell(f, v) { return isDec(f) ? String(v).replace('.', ',') : String(v); }
   function xKey(r) { return C.tenXuong(r.xuong, r.donVi); }
 
   function gridHTML(rows, admin) {
-    var th1 = '<tr><th rowspan="2" class="sticky-col">Bộ phận</th><th colspan="2">Quân số đầu ngày</th><th colspan="4" class="g-vang">Số người vắng</th>' +
-      '<th colspan="2" class="g-moi">Nhân sự mới</th><th colspan="2" class="g-nghi">Nghỉ việc</th><th rowspan="2">Tăng ca<br>(người)</th>' +
-      '<th rowspan="2">Quân số<br>trong ngày</th><th rowspan="2">Hiện<br>diện</th><th rowspan="2">Tỷ lệ</th><th rowspan="2">Ghi chú</th><th rowspan="2">Trạng thái</th>' +
+    var th1 = '<tr><th rowspan="2" class="sticky-col">Bộ phận</th><th colspan="2">Quân số đầu ngày</th><th colspan="2" class="g-vang">Nghỉ phép</th>' +
+      '<th colspan="2" class="g-tc">Tăng cường</th><th colspan="2" class="g-moi">Nhân sự mới</th><th colspan="2" class="g-nghi">Nghỉ việc</th><th colspan="2" class="g-ca">Tăng ca</th>' +
+      '<th rowspan="2">Quân số<br>trong ngày</th><th rowspan="2">Hiện<br>diện</th><th rowspan="2">Tỷ lệ</th><th rowspan="2">Thực tế<br>làm việc</th><th rowspan="2">Ghi chú</th><th rowspan="2">Trạng thái</th>' +
       (admin ? '<th rowspan="2"></th>' : '') + '</tr>';
-    var th2 = '<tr><th>Chính thức</th><th>Thời vụ</th>' + GCOLS.slice(0, 8).map(function (c) {
-      return '<th class="g-' + (c.g === 'v' ? 'vang' : c.g === 'm' ? 'moi' : 'nghi') + '">' + c.h + '</th>';
+    var th2 = '<tr><th>Chính thức</th><th>Thời vụ</th>' + GCOLS.map(function (c) {
+      return '<th class="g-' + GCLS[c.g] + '">' + c.h + '</th>';
     }).join('') + '</tr>';
     var body = rows.map(function (r) {
       var v = r.values || {}, ro = isReadOnly(r);
       return '<tr data-ma="' + esc(r.maBP) + '" data-x="' + esc(xKey(r)) + '"><td class="bp sticky-col">' + esc(r.boPhan) + '<small>' + esc(r.maBP) +
         ' · ' + esc(xKey(r).split(' · ')[1]) + '</small></td><td class="calc" data-label="Đầu ngày: Chính thức">' + r.bcDau + '</td><td class="calc" data-label="Đầu ngày: Thời vụ">' + r.tvDau + '</td>' +
         GCOLS.map(function (c) {
-          return '<td class="c-' + (c.g || 'x') + '" data-label="' + esc(GLABEL[c.f]) + '"><input class="cell-in" data-f="' + c.f + '" inputmode="numeric" autocomplete="off" value="' + (r.values ? esc(v[c.f]) : '0') + '"' +
+          return '<td class="c-' + c.g + '" data-label="' + esc(GLABEL[c.f]) + '"><input class="cell-in" data-f="' + c.f + '" inputmode="' + (isDec(c.f) ? 'decimal' : 'numeric') + '" autocomplete="off" value="' + (r.values ? esc(showCell(c.f, v[c.f])) : '0') + '"' +
             (ro ? ' disabled' : '') + ' aria-label="' + esc(r.boPhan + ' – ' + C.LABELS[c.f]) + '"></td>';
         }).join('') +
-        '<td class="calc qs" data-label="Quân số trong ngày"></td><td class="calc hd" data-label="Hiện diện"></td><td class="calc tl" data-label="Tỷ lệ"></td><td class="nt" data-label="Ghi chú"><input class="cell-in note" data-f="ghiChu" maxlength="500" value="' +
+        '<td class="calc qs" data-label="Quân số trong ngày"></td><td class="calc hd" data-label="Hiện diện"></td><td class="calc tl" data-label="Tỷ lệ"></td><td class="calc tt" data-label="Thực tế làm việc"></td><td class="nt" data-label="Ghi chú"><input class="cell-in note" data-f="ghiChu" maxlength="500" value="' +
         esc(v.ghiChu || '') + '"' + (ro ? ' disabled' : '') + ' aria-label="Ghi chú ' + esc(r.boPhan) + '"></td><td class="st"></td>' +
         (admin ? '<td class="act">' + (r.daNhap ? '<button class="btn sm danger" data-del="' + esc(r.maBP) + '">Xóa</button>' : '') + '</td>' : '') + '</tr>';
     }).join('');
@@ -221,15 +227,13 @@
   }
   function readRow(tr) {
     var o = {};
-    var r0 = E.byMa[tr.dataset.ma]; // cột "Việc riêng" đã ẩn khỏi form: giữ giá trị đã lưu, mặc định 0
-    o.viecRieng = (r0 && r0.values && r0.values.viecRieng !== undefined) ? String(r0.values.viecRieng) : '0';
-    $$('input[data-f]', tr).forEach(function (i) { var x = i.value.trim(); o[i.dataset.f] = (x === '' && i.dataset.f !== 'ghiChu') ? '0' : x; });
+    $$('input[data-f]', tr).forEach(function (i) { var f = i.dataset.f; o[f] = f === 'ghiChu' ? i.value.trim() : normCell(f, i.value); });
     return o;
   }
   function evalRow(tr) {
     var r = E.byMa[tr.dataset.ma], raw = readRow(tr), orig = r.values;
     var blanks = 0; // ô trống mặc định là 0 – không bắt buộc nhập
-    var dirty = orig ? (C.FIELDS.some(function (f) { return String(orig[f]) !== raw[f]; }) || String(orig.ghiChu || '') !== raw.ghiChu)
+    var dirty = orig ? (C.FIELDS.some(function (f) { return Number(orig[f] || 0) !== Number(raw[f]); }) || String(orig.ghiChu || '') !== raw.ghiChu)
       : (C.FIELDS.some(function (f) { return raw[f] !== '0'; }) || raw.ghiChu !== '');
     var pending = !orig && E.mode === 'entry' && !isReadOnly(r);
     var tmp = { bcDau: r.bcDau, tvDau: r.tvDau };
@@ -239,10 +243,11 @@
     $$('input.cell-in', tr).forEach(function (i) {
       if (i.dataset.f === 'ghiChu') return;
       var x = i.value.trim();
-      i.classList.toggle('bad', x !== '' && !/^\d+$/.test(x));
+      i.classList.toggle('bad', x !== '' && !(isDec(i.dataset.f) ? /^\d+([.,][05])?$/.test(x) : /^\d+$/.test(x)));
     });
     $('.qs', tr).textContent = d.quanSo;
     $('.hd', tr).textContent = d.hienDien;
+    $('.tt', tr).textContent = d.thucTe;
     var tl = $('.tl', tr), m = C.mucDo(d, S.cfg);
     tl.textContent = d.tyLe !== null ? fp(d.tyLe) : '';
     tl.className = 'calc tl ' + lvlClass(m);
@@ -282,7 +287,10 @@
     tb.addEventListener('input', function (ev) {
       var i = ev.target;
       if (!i.classList.contains('cell-in')) return;
-      if (i.dataset.f !== 'ghiChu' && /[^\d]/.test(i.value)) i.value = i.value.replace(/[^\d]/g, '');
+      if (i.dataset.f !== 'ghiChu') {
+        var re = isDec(i.dataset.f) ? /[^\d.,]/g : /[^\d]/g;
+        if (re.test(i.value)) i.value = i.value.replace(re, '');
+      }
       var tr = i.closest('tr'); delete E.results[tr.dataset.ma];
       evalRow(tr); refreshSaveBar();
     });
@@ -454,22 +462,23 @@
       (t.chenh !== null ? ' ' + deltaHtml(t.chenh) + ' điểm so với ' + shortDate(R.ngayTruoc) : '') +
       ' · Tháng: ' + fp(R.thang.tyLe) + '</div></div>' +
       kpi('Quân số trong ngày', fi(t.quanSo), 'Đầu ngày ' + fi(t.tongDau) + ' · chính thức ' + fi(t.bcDau) + ' · thời vụ ' + fi(t.tvDau)) +
-      kpi('Hiện diện', fi(t.hienDien), 'Vắng ' + fi(t.tongVang) + ' người') +
-      kpi('Nghỉ không phép', fi(t.khongPhep), 'Lũy kế tháng ' + fi(R.thang.khongPhep) + ' lượt') +
+      kpi('Hiện diện', fi(t.hienDien), 'Nghỉ phép ' + fi(t.tongVang) + ' (chính thức ' + fi(t.vangBC) + ' · thời vụ ' + fi(t.vangTV) + ')' +
+        (t.diTC || t.denTC ? '<br>Tăng cường: đi ' + fi(t.diTC) + ' · đến ' + fi(t.denTC) + ' → thực tế ' + fi(t.thucTe) : '')) +
+      kpi('Tăng ca', fi(t.tangCa) + ' <small style="font-size:.5em;font-weight:600">người</small>', fh(t.gioTC) + ' giờ hôm nay · tháng ' + fh(R.thang.gioTC) + ' giờ') +
       kpi('Biến động hôm nay', '+' + t.moi + ' / −' + t.nghiViec, 'Tháng: +' + R.luyKeThang.moi + ' / −' + R.luyKeThang.nghiViec) +
       '</div>';
-    html += '<div class="card"><h3>Theo đơn vị <small>Tăng ca hôm nay: ' + fi(t.tangCa) + ' người</small></h3><div class="units">' + units.map(function (g, i) {
+    html += '<div class="card"><h3>Theo đơn vị <small>Tăng ca hôm nay: ' + fi(t.tangCa) + ' người · ' + fh(t.gioTC) + ' giờ</small></h3><div class="units">' + units.map(function (g, i) {
       var col = g.nhom === 'rieng' ? COLOR.rieng : unitColor(g.key, i);
       return '<div class="unit"><div class="hd"><span class="dot" style="background:' + col + '"></span>' + esc(g.label) + '</div><div class="rt">' + (g.soBP ? fp(g.tyLe) : '—') +
         ' ' + (g.soBP ? statusChip(g.mucDo, cfg) : '') + '</div><div class="bar"><i style="width:' + (g.tyLe ? (g.tyLe * 100).toFixed(1) : 0) + '%;background:' + col + '"></i></div>' +
         '<div class="meta"><span>Hiện diện ' + fi(g.hienDien) + '/' + fi(g.quanSo) + '</span><span>Nhập ' + g.soBP + '/' + g.soBPTong + ' BP</span></div>' +
-        '<div class="meta"><span>Vắng ' + fi(g.tongVang) + (g.khongPhep ? ' (KP ' + g.khongPhep + ')' : '') + '</span><span>' + deltaHtml(g.chenh) + (g.chenh !== null ? ' điểm' : '') + '</span></div></div>';
+        '<div class="meta"><span>Nghỉ phép ' + fi(g.tongVang) + ' (CT ' + fi(g.vangBC) + ' · TV ' + fi(g.vangTV) + ')' + (g.diTC || g.denTC ? ' · TC đi ' + fi(g.diTC) + '/đến ' + fi(g.denTC) : '') + '</span><span>' + deltaHtml(g.chenh) + (g.chenh !== null ? ' điểm' : '') + '</span></div></div>';
     }).join('') + '</div></div>';
     html += '<div class="grid g-21" style="margin-top:16px"><div class="card"><h3>Xu hướng tỷ lệ chuyên cần <small>45 ngày gần nhất có dữ liệu</small></h3><div class="chart-box"><canvas id="c-trend" role="img" aria-label="Biểu đồ xu hướng tỷ lệ chuyên cần"></canvas></div></div>' +
       '<div class="card"><h3>Chưa nhập <small>' + R.chuaNhap.length + ' bộ phận</small></h3>' +
       (R.chuaNhap.length ? '<ul class="list" style="max-height:290px;overflow:auto">' + R.chuaNhap.map(function (n) { return '<li><span>' + esc(n) + '</span><span class="chip crit">Chưa nhập</span></li>'; }).join('') + '</ul>'
         : '<div class="empty">Tất cả bộ phận đã nhập ✓</div>') + '</div></div>';
-    html += '<div class="grid g2" style="margin-top:16px"><div class="card"><h3>Cơ cấu vắng mặt theo đơn vị <small>số người</small></h3><div class="chart-box"><canvas id="c-vang" role="img" aria-label="Biểu đồ cơ cấu vắng mặt"></canvas></div></div>' +
+    html += '<div class="grid g2" style="margin-top:16px"><div class="card"><h3>Nghỉ phép &amp; tăng cường theo đơn vị <small>số người</small></h3><div class="chart-box"><canvas id="c-vang" role="img" aria-label="Biểu đồ cơ cấu vắng mặt"></canvas></div></div>' +
       '<div class="card"><h3>Tỷ lệ chuyên cần theo xưởng</h3><div class="chart-box"><canvas id="c-xuong" role="img" aria-label="Biểu đồ tỷ lệ theo xưởng"></canvas></div></div></div>';
     html += '<div class="grid g-21" style="margin-top:16px"><div class="card"><h3>Bộ phận chuyên cần thấp nhất</h3>' + lowTable(R.thapNhat) +
       (R.bienDong.length ? '<h3 style="margin-top:18px">Biến động nhân sự hôm nay</h3>' + bienDongTable(R.bienDong) : '') + '</div>' +
@@ -483,8 +492,8 @@
       })));
     mkChart($('#c-vang'), {
       type: 'bar',
-      data: { labels: C.VANG.map(function (f) { return C.LABELS[f]; }), datasets: R.vangTheoDonVi.map(function (u, i) {
-        return { label: u.label, data: C.VANG.map(function (f) { return u[f]; }), backgroundColor: unitColor(u.key, i), borderRadius: 4, borderSkipped: 'start', maxBarThickness: 26 };
+      data: { labels: C.VANG.concat(C.TANG_CUONG).map(function (f) { return C.LABELS[f]; }), datasets: R.vangTheoDonVi.map(function (u, i) {
+        return { label: u.label, data: C.VANG.concat(C.TANG_CUONG).map(function (f) { return u[f]; }), backgroundColor: unitColor(u.key, i), borderRadius: 4, borderSkipped: 'start', maxBarThickness: 26 };
       }) },
       options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#e3ede6' }, border: { display: false } }, x: { grid: { display: false } } },
         plugins: { legend: { position: 'top', align: 'end' } } }
@@ -509,9 +518,9 @@
   }
   function lowTable(rows) {
     if (!rows.length) return '<div class="empty">Chưa có dữ liệu.</div>';
-    return '<div class="tbl-wrap"><table class="tbl"><thead><tr><th style="text-align:left">Bộ phận</th><th>Quân số</th><th>Vắng</th><th>Không phép</th><th>Tỷ lệ</th><th>So với hôm trước</th></tr></thead><tbody>' +
+    return '<div class="tbl-wrap"><table class="tbl"><thead><tr><th style="text-align:left">Bộ phận</th><th>Quân số</th><th>Nghỉ phép CT</th><th>Nghỉ phép TV</th><th>Tỷ lệ</th><th>So với hôm trước</th></tr></thead><tbody>' +
       rows.map(function (r) {
-        return '<tr><td class="bp">' + esc(r.boPhan) + '</td><td class="num">' + fi(r.quanSo) + '</td><td class="num">' + fi(r.tongVang) + '</td><td class="num">' + (r.khongPhep || '') +
+        return '<tr><td class="bp">' + esc(r.boPhan) + '</td><td class="num">' + fi(r.quanSo) + '</td><td class="num">' + (r.vangBC || '') + '</td><td class="num">' + (r.vangTV || '') +
           '</td><td class="num ' + lvlClass(r.mucDo) + '">' + fp(r.tyLe) + '</td><td class="num">' + deltaHtml(r.chenh) + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
@@ -539,17 +548,17 @@
   }
   var AGG_COLS = [
     ['bcDau', 'Chính thức'], ['tvDau', 'Thời vụ'], ['tongDau', 'Tổng đầu ngày'], ['moi', 'Mới'], ['nghiViec', 'Nghỉ việc'], ['quanSo', 'Quân số trong ngày'],
-    ['phepNam', 'Phép năm'], ['khongPhep', 'Không phép'], ['om', 'Ốm'], ['thaiSan', 'Thai sản'], ['viecRieng', 'Việc riêng'], ['tongVang', 'Tổng vắng'],
-    ['hienDien', 'Hiện diện']
+    ['vangBC', 'Nghỉ phép CT'], ['vangTV', 'Nghỉ phép TV'], ['tongVang', 'Tổng nghỉ phép'], ['hienDien', 'Hiện diện'],
+    ['diTC', 'Đi tăng cường'], ['denTC', 'Đến tăng cường'], ['thucTe', 'Thực tế làm việc']
   ];
   function aggCells(a, entered) {
     return AGG_COLS.map(function (c) { return '<td class="num">' + (entered || c[0] === 'bcDau' || c[0] === 'tvDau' || c[0] === 'tongDau' ? fi(a[c[0]]) : '') + '</td>'; }).join('') +
       '<td class="num ' + lvlClass(a.mucDo) + '">' + fp(a.tyLe) + '</td><td class="num">' + fp(a.tyLeTruoc) + '</td><td class="num">' + deltaHtml(a.chenh) +
-      '</td><td class="num">' + (entered ? fi(a.tangCa) : '') + '</td><td class="nowrap">' + esc(a.canhBao || '') + '</td>';
+      '</td><td class="num">' + (entered ? fi(a.tangCa) : '') + '</td><td class="num">' + (entered ? fh(a.gioTC) : '') + '</td><td class="nowrap">' + esc(a.canhBao || '') + '</td>';
   }
   function aggHead(first) {
     return '<tr><th style="text-align:left" class="sticky-col">' + first + '</th>' + AGG_COLS.map(function (c) { return '<th>' + c[1] + '</th>'; }).join('') +
-      '<th>Tỷ lệ chuyên cần</th><th>Ngày trước</th><th>Chênh (điểm)</th><th>Tăng ca</th><th>Cảnh báo</th></tr>';
+      '<th>Tỷ lệ chuyên cần</th><th>Ngày trước</th><th>Chênh (điểm)</th><th>Tăng ca (người)</th><th>Tăng ca (giờ)</th><th>Cảnh báo</th></tr>';
   }
   function rpTools(inner) { return '<div class="page-head"><div class="tools" style="margin-left:0">' + inner + '</div></div>'; }
 
@@ -563,15 +572,16 @@
         R.groups.map(function (g) {
           return '<tr class="' + (g.nhom === 'tong' ? 'tot' : '') + '"><td class="sticky-col">' + esc(g.label) + ' <span class="muted">(' + g.soBP + '/' + g.soBPTong + ')</span></td>' + aggCells(g, g.soBP > 0) + '</tr>';
         }).join('') + '</tbody></table></div></div>';
-      html += '<div class="card"><h3>Theo xưởng</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th style="text-align:left">Xưởng</th><th>BP đã nhập</th><th>Quân số</th><th>Vắng</th><th>Không phép</th><th>Hiện diện</th><th>Tỷ lệ</th><th>Tăng ca</th></tr></thead><tbody>' +
+      html += '<div class="card"><h3>Theo xưởng</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th style="text-align:left">Xưởng</th><th>BP đã nhập</th><th>Quân số</th><th>Nghỉ phép</th><th>Hiện diện</th><th>Tỷ lệ</th><th>Đi tăng cường</th><th>Đến tăng cường</th><th>Tăng ca (người)</th><th>Tăng ca (giờ)</th></tr></thead><tbody>' +
         R.xuong.map(function (x) {
           return '<tr><td>' + esc(x.label) + '</td><td class="num">' + x.soBP + '/' + x.soBPTong + '</td><td class="num">' + fi(x.quanSo) + '</td><td class="num">' + fi(x.tongVang) +
-            '</td><td class="num">' + fi(x.khongPhep) + '</td><td class="num">' + fi(x.hienDien) + '</td><td class="num ' + lvlClass(x.mucDo) + '">' + fp(x.tyLe) + '</td><td class="num">' + fi(x.tangCa) + '</td></tr>';
+            '</td><td class="num">' + fi(x.hienDien) + '</td><td class="num ' + lvlClass(x.mucDo) + '">' + fp(x.tyLe) + '</td><td class="num">' + fi(x.diTC) + '</td><td class="num">' + fi(x.denTC) +
+            '</td><td class="num">' + fi(x.tangCa) + '</td><td class="num">' + fh(x.gioTC) + '</td></tr>';
         }).join('') + '</tbody></table></div></div>';
       var dvs = uniq(R.rows.map(function (r) { return r.donVi; }));
       html += '<div class="card"><h3>II. Chi tiết theo bộ phận</h3><div class="tbl-wrap" style="max-height:70vh"><table class="tbl"><thead>' + aggHead('Bộ phận') + '</thead><tbody>' +
         dvs.map(function (dv) {
-          return '<tr class="grp"><td class="sticky-col" colspan="' + (AGG_COLS.length + 6) + '">' + esc(dv) + '</td></tr>' + R.rows.filter(function (r) { return r.donVi === dv; }).map(function (r) {
+          return '<tr class="grp"><td class="sticky-col" colspan="' + (AGG_COLS.length + 7) + '">' + esc(dv) + '</td></tr>' + R.rows.filter(function (r) { return r.donVi === dv; }).map(function (r) {
             return '<tr><td class="bp sticky-col">' + esc(r.boPhan) + '<small>' + esc(r.maBP + ' · ' + xKey(r).split(' · ')[1]) + (r.ghiChu ? ' · ' + esc(r.ghiChu) : '') + '</small></td>' + aggCells(r, r.daNhap) + '</tr>';
           }).join('');
         }).join('') + '</tbody></table></div></div>';
@@ -583,10 +593,10 @@
       $('#r-ngay').onchange = function () { if (this.value) go('#/bao-cao/ngay?ngay=' + this.value); };
       $('#r-copy').onclick = function () { copyText(R.banTin); };
       $('#r-csv').onclick = function () {
-        var hd = ['Loại', 'Đơn vị', 'Xưởng', 'Bộ phận', 'Đã nhập'].concat(AGG_COLS.map(function (c) { return c[1]; })).concat(['Tỷ lệ chuyên cần', 'Tỷ lệ ngày trước', 'Chênh (điểm)', 'Tăng ca', 'Cảnh báo', 'Ghi chú']);
+        var hd = ['Loại', 'Đơn vị', 'Xưởng', 'Bộ phận', 'Đã nhập'].concat(AGG_COLS.map(function (c) { return c[1]; })).concat(['Tỷ lệ chuyên cần', 'Tỷ lệ ngày trước', 'Chênh (điểm)', 'Tăng ca (người)', 'Tăng ca (giờ)', 'Cảnh báo', 'Ghi chú']);
         var line = function (loai, a, dv, xg, bp, entered) {
           return [loai, dv, xg, bp, entered ? 'Có' : 'Chưa'].concat(AGG_COLS.map(function (c) { return entered || /Dau$/.test(c[0]) ? a[c[0]] : ''; }))
-            .concat([fp(a.tyLe), fp(a.tyLeTruoc), a.chenh === null || a.chenh === undefined ? '' : a.chenh.toFixed(1).replace('.', ','), entered ? a.tangCa : '', a.canhBao || '', a.ghiChu || '']);
+            .concat([fp(a.tyLe), fp(a.tyLeTruoc), a.chenh === null || a.chenh === undefined ? '' : a.chenh.toFixed(1).replace('.', ','), entered ? a.tangCa : '', entered ? fh(a.gioTC) : '', a.canhBao || '', a.ghiChu || '']);
         };
         var rows = R.groups.map(function (g) { return line('Đơn vị', g, g.label, '', '', g.soBP > 0); })
           .concat(R.rows.map(function (r) { return line('Bộ phận', r, r.donVi, r.xuong, r.boPhan, r.daNhap); }));
@@ -602,19 +612,21 @@
         ' ngày có dữ liệu · tỷ lệ cả tháng ' + fp(R.tong.tyLe) + ' (tính theo người-ngày)</div></div><div class="tools"><input type="month" class="input" id="r-thang" max="' + todayVN().slice(0, 7) +
         '" value="' + R.thang + '"><button class="btn" id="r-csv">Xuất CSV</button><button class="btn" onclick="window.print()">In</button></div></div>';
       html += '<div class="card"><h3>Tỷ lệ chuyên cần theo ngày</h3><div class="chart-box"><canvas id="c-m" role="img" aria-label="Tỷ lệ chuyên cần theo ngày trong tháng"></canvas></div></div>';
-      var hd = ['Ngày', 'Thứ', 'BP đã nhập', 'Quân số', 'Hiện diện', 'Tổng vắng', 'Không phép', 'Tỷ lệ'].concat(groups.map(function (g) { return 'Tỷ lệ ' + g.label; })).concat(['Mới', 'Nghỉ việc', 'Tăng ca']);
+      var hd = ['Ngày', 'Thứ', 'BP đã nhập', 'Quân số', 'Hiện diện', 'Nghỉ phép CT', 'Nghỉ phép TV', 'Tỷ lệ'].concat(groups.map(function (g) { return 'Tỷ lệ ' + g.label; }))
+        .concat(['Mới', 'Nghỉ việc', 'Đi tăng cường', 'Đến tăng cường', 'Tăng ca (người)', 'Tăng ca (giờ)']);
       html += '<div class="card"><h3>Chi tiết theo ngày</h3><div class="tbl-wrap"><table class="tbl"><thead><tr>' + hd.map(function (x) { return '<th>' + esc(x) + '</th>'; }).join('') + '</tr></thead><tbody>' +
         R.days.map(function (x) {
           if (!x.coDuLieu) return '<tr class="muted"><td>' + fd(x.ngay) + '</td><td>' + x.thu + '</td><td colspan="' + (hd.length - 2) + '">' + (x.ngayLamViec ? 'Không có dữ liệu' : 'Ngày nghỉ') + '</td></tr>';
           return '<tr><td>' + fd(x.ngay) + '</td><td>' + x.thu + '</td><td class="num">' + x.soBP + '</td><td class="num">' + fi(x.quanSo) + '</td><td class="num">' + fi(x.hienDien) +
-            '</td><td class="num">' + fi(x.tongVang) + '</td><td class="num">' + fi(x.khongPhep) + '</td><td class="num ' + lvlClass(x.mucDo) + '">' + fp(x.tyLe) + '</td>' +
+            '</td><td class="num">' + fi(x.vangBC) + '</td><td class="num">' + fi(x.vangTV) + '</td><td class="num ' + lvlClass(x.mucDo) + '">' + fp(x.tyLe) + '</td>' +
             groups.map(function (g) { return '<td class="num">' + fp(x.nhom[g.key]) + '</td>'; }).join('') +
-            '<td class="num">' + (x.moi || '') + '</td><td class="num">' + (x.nghiViec || '') + '</td><td class="num">' + fi(x.tangCa) + '</td></tr>';
+            '<td class="num">' + (x.moi || '') + '</td><td class="num">' + (x.nghiViec || '') + '</td><td class="num">' + (x.diTC || '') + '</td><td class="num">' + (x.denTC || '') +
+            '</td><td class="num">' + fi(x.tangCa) + '</td><td class="num">' + fh(x.gioTC) + '</td></tr>';
         }).join('') + '</tbody><tfoot><tr><td colspan="2">Cả tháng (người-ngày)</td><td class="num">' + R.tong.soNgay + ' ngày</td><td class="num">' + fi(R.tong.quanSo) + '</td><td class="num">' +
-        fi(R.tong.hienDien) + '</td><td class="num">' + fi(R.tong.tongVang) + '</td><td class="num">' + fi(R.tong.khongPhep) + '</td><td class="num">' + fp(R.tong.tyLe) + '</td>' +
+        fi(R.tong.hienDien) + '</td><td class="num">' + fi(R.tong.vangBC) + '</td><td class="num">' + fi(R.tong.vangTV) + '</td><td class="num">' + fp(R.tong.tyLe) + '</td>' +
         groups.map(function (g) { return '<td class="num">' + fp(R.tong.nhom[g.key]) + '</td>'; }).join('') + '<td class="num">' + R.tong.moi + '</td><td class="num">' + R.tong.nghiViec +
-        '</td><td class="num">' + fi(R.tong.tangCa) + '</td></tr></tfoot></table></div><div class="muted" style="margin-top:8px">Tỷ lệ theo đơn vị ở dòng cả tháng là trung bình các ngày có dữ liệu. ' +
-        'Tăng ca cộng theo lượt người-ngày.</div></div>';
+        '</td><td class="num">' + fi(R.tong.diTC) + '</td><td class="num">' + fi(R.tong.denTC) + '</td><td class="num">' + fi(R.tong.tangCa) + '</td><td class="num">' + fh(R.tong.gioTC) + '</td></tr></tfoot></table></div><div class="muted" style="margin-top:8px">Tỷ lệ theo đơn vị ở dòng cả tháng là trung bình các ngày có dữ liệu. ' +
+        'Tăng ca cộng theo lượt người-ngày và tổng số giờ. Tăng cường chỉ ghi nhận, không tính vào tỷ lệ chuyên cần.</div></div>';
       $('#rp').innerHTML = html;
       $('#r-thang').onchange = function () { if (this.value) go('#/bao-cao/thang?thang=' + this.value); };
       var dd = R.days.filter(function (x) { return x.coDuLieu; });
@@ -624,10 +636,10 @@
         })));
       $('#r-csv').onclick = function () {
         downloadCSV('TongHopThang_' + R.thang + '.csv', hd, R.days.filter(function (x) { return x.coDuLieu; }).map(function (x) {
-          return [fd(x.ngay), x.thu, x.soBP, x.quanSo, x.hienDien, x.tongVang, x.khongPhep, fp(x.tyLe)].concat(groups.map(function (g) { return fp(x.nhom[g.key]); }))
-            .concat([x.moi, x.nghiViec, x.tangCa]);
-        }).concat([['Cả tháng', '', R.tong.soNgay, R.tong.quanSo, R.tong.hienDien, R.tong.tongVang, R.tong.khongPhep, fp(R.tong.tyLe)]
-          .concat(groups.map(function (g) { return fp(R.tong.nhom[g.key]); })).concat([R.tong.moi, R.tong.nghiViec, R.tong.tangCa])]));
+          return [fd(x.ngay), x.thu, x.soBP, x.quanSo, x.hienDien, x.vangBC, x.vangTV, fp(x.tyLe)].concat(groups.map(function (g) { return fp(x.nhom[g.key]); }))
+            .concat([x.moi, x.nghiViec, x.diTC, x.denTC, x.tangCa, fh(x.gioTC)]);
+        }).concat([['Cả tháng', '', R.tong.soNgay, R.tong.quanSo, R.tong.hienDien, R.tong.vangBC, R.tong.vangTV, fp(R.tong.tyLe)]
+          .concat(groups.map(function (g) { return fp(R.tong.nhom[g.key]); })).concat([R.tong.moi, R.tong.nghiViec, R.tong.diTC, R.tong.denTC, R.tong.tangCa, fh(R.tong.gioTC)])]));
       };
     }).catch(function (e) { $('#rp').innerHTML = '<div class="banner crit">' + esc(e.message) + '</div>'; });
   }
@@ -637,16 +649,16 @@
       var R = d.report, rows = R.byBp.slice(), sortKey = '', sortDir = 1;
       rows.forEach(function (r) { r.xuongTen = xKey(r).split(' · ')[1]; });
       var cols = [['donVi', 'Đơn vị', 's'], ['xuongTen', 'Xưởng', 's'], ['boPhan', 'Bộ phận', 's'], ['soNgayNhap', 'Ngày đã nhập', 'n'], ['quanSoCuoi', 'Quân số cuối kỳ', 'n'],
-        ['quanSo', 'Người-ngày', 'n'], ['phepNam', 'Phép năm', 'n'], ['khongPhep', 'Không phép', 'n'], ['om', 'Ốm', 'n'], ['thaiSan', 'Thai sản', 'n'], ['viecRieng', 'Việc riêng', 'n'],
-        ['tongVang', 'Tổng vắng', 'n'], ['tyLe', 'Tỷ lệ chuyên cần', 'p'], ['soNgayDuoiNguong', 'Số ngày dưới ' + fp(C.nguongDo(S.cfg), 0), 'n'], ['moi', 'Mới', 'n'],
-        ['nghiViec', 'Nghỉ việc', 'n'], ['tangCa', 'Tăng ca (lượt)', 'n']];
+        ['quanSo', 'Người-ngày', 'n'], ['vangBC', 'Nghỉ phép CT', 'n'], ['vangTV', 'Nghỉ phép TV', 'n'],
+        ['tongVang', 'Tổng nghỉ phép', 'n'], ['tyLe', 'Tỷ lệ chuyên cần', 'p'], ['soNgayDuoiNguong', 'Số ngày dưới ' + fp(C.nguongDo(S.cfg), 0), 'n'], ['moi', 'Mới', 'n'],
+        ['nghiViec', 'Nghỉ việc', 'n'], ['diTC', 'Đi tăng cường (lượt)', 'n'], ['denTC', 'Đến tăng cường (lượt)', 'n'], ['tangCa', 'Tăng ca (lượt)', 'n'], ['gioTC', 'Tăng ca (giờ)', 'h']];
       var draw = function () {
         $('#bp-body').innerHTML = rows.map(function (r) {
           return '<tr>' + cols.map(function (c) {
             var v = r[c[0]];
             if (c[2] === 's') return '<td' + (c[0] === 'boPhan' ? ' class="bp"' : '') + '>' + esc(v) + '</td>';
             if (c[2] === 'p') return '<td class="num ' + lvlClass(r.mucDo) + '">' + fp(v) + '</td>';
-            return '<td class="num">' + (r.soNgayNhap || c[0] === 'quanSoCuoi' ? fi(v) : '') + '</td>';
+            return '<td class="num">' + (r.soNgayNhap || c[0] === 'quanSoCuoi' ? (c[2] === 'h' ? fh(v) : fi(v)) : '') + '</td>';
           }).join('') + '</tr>';
         }).join('');
       };

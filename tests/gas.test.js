@@ -27,7 +27,7 @@ let f = ok(call({action:'entryForm', token:tX1}));
 assert.equal(f.ngay, '2026-11-17'); assert.equal(f.rows.length, 10, 'NM1-X1 thấy 10 bộ phận của Xưởng 1'); assert.equal(f.khoa, false);
 assert.ok(f.rows.every(r => r.xuong === 'NM1-X1'));
 assert.equal(ok(call({action:'entryForm', token: ok(call({action:'login', ma:'NM2-VP', pin:pins['NM2-VP']})).token})).rows.length, 7);
-const z = {phepNam:0,khongPhep:0,om:0,thaiSan:0,viecRieng:0,moiBC:0,moiTV:0,nvBC:0,nvTV:0,tangCa:0};
+const z = {vangBC:0,vangTV:0,diTC:0,denTC:0,moiBC:0,moiTV:0,nvBC:0,nvTV:0,tangCa:0,gioTC:0};
 const tcbg = f.rows.find(r => r.boPhan === 'NM1 - TCBG');
 assert.equal(tcbg.bcDau, 34); assert.equal(tcbg.tvDau, 4);
 // nhập lùi / nhập trước bị chặn
@@ -35,23 +35,25 @@ fail(call({action:'submitEntry', token:tX1, ngay:'2026-11-16', rows:[{maBP:tcbg.
 fail(call({action:'submitEntry', token:tX1, ngay:'2026-11-18', rows:[{maBP:tcbg.maBP, values:z}]}), /Không được nhập lùi/);
 // nhập hợp lệ
 let s = ok(call({action:'submitEntry', token:tX1, ngay:'2026-11-17', rows:[
-  {maBP:tcbg.maBP, values:Object.assign({}, z, {om:2, moiBC:2, nvTV:1, tangCa:10, ghiChu:'=HACK()'})},
+  {maBP:tcbg.maBP, values:Object.assign({}, z, {vangBC:2, moiBC:2, nvTV:1, diTC:1, tangCa:10, gioTC:15, ghiChu:'=HACK()'})},
   {maBP:'NM1-08', values:z},
   {maBP:'NM2-01', values:z},
   {maBP:'NM1-01', values:z},
-  {maBP:'NM1-09', values:Object.assign({}, z, {om:99})},
-  {maBP:'NM1-10', values:Object.assign({}, z, {om:''})},
+  {maBP:'NM1-09', values:Object.assign({}, z, {vangBC:99})},
+  {maBP:'NM1-10', values:Object.assign({}, z, {vangTV:''})},
 ]}));
 const res = Object.fromEntries(s.results.map(r => [r.maBP, r]));
 assert.ok(res[tcbg.maBP].ok && res['NM1-08'].ok);
 assert.match(res['NM2-01'].errors[0], /phạm vi/);
 assert.match(res['NM1-01'].errors[0], /phạm vi/, 'Văn phòng không thuộc Xưởng 1');
-assert.match(res['NM1-09'].errors.join(), /Tổng vắng/);
+assert.match(res['NM1-09'].errors.join(), /Nghỉ phép chính thức/);
 assert.match(res['NM1-10'].errors.join(), /chưa nhập/);
 assert.equal(sheets.NhapLieu.getLastRow(), 3);
 assert.equal(sheets.NhapLieu.data[1][17], "'=HACK()", 'ghi chú bị chặn công thức');
+assert.deepEqual(sheets.NhapLieu.data[1].slice(7, 17), [2, 0, 1, 0, 2, 0, 0, 1, 10, 15], 'cột dữ liệu v2');
+assert.equal(sheets.NhapLieu.data[1][23], 39 - 2 - 1, 'thực tế làm việc');
 // sửa trong ngày
-s = ok(call({action:'submitEntry', token:tX1, ngay:'2026-11-17', rows:[{maBP:'NM1-08', values:Object.assign({}, z, {phepNam:1})}]}));
+s = ok(call({action:'submitEntry', token:tX1, ngay:'2026-11-17', rows:[{maBP:'NM1-08', values:Object.assign({}, z, {vangTV:0, vangBC:1})}]}));
 assert.equal(s.results[0].msg, 'Đã cập nhật'); assert.equal(sheets.NhapLieu.getLastRow(), 3);
 assert.equal(s.rows.find(r=>r.maBP==='NM1-08').lanSua, 1);
 // Hôm sau: quân số cuốn chiếu
@@ -71,7 +73,7 @@ fail(call({action:'submitEntry', token:tX1, ngay:'2026-11-18', rows:[{maBP:'NM1-
 fail(call({action:'adminSave', token:tAd, ngay:'2026-11-17', lyDo:'', rows:[]}), /lý do/);
 fail(call({action:'adminSave', token:tX1, ngay:'2026-11-17', lyDo:'abcdef', rows:[]}), /không có quyền/);
 fail(call({action:'adminSave', token:tAd, ngay:'2026-11-19', lyDo:'abcdef', rows:[]}), /tương lai/);
-let a = ok(call({action:'adminSave', token:tAd, ngay:'2026-11-17', lyDo:'Bổ sung 3 người mới chưa báo', rows:[{maBP:tcbg.maBP, values:Object.assign({}, z, {om:2, moiBC:5, nvTV:1, tangCa:10})}]}));
+let a = ok(call({action:'adminSave', token:tAd, ngay:'2026-11-17', lyDo:'Bổ sung 3 người mới chưa báo', rows:[{maBP:tcbg.maBP, values:Object.assign({}, z, {vangBC:2, moiBC:5, nvTV:1, tangCa:10, gioTC:15})}]}));
 assert.equal(a.capNhatCuonChieu, 1);
 const r18 = sheets.NhapLieu.data.find(r => r[0]==='2026-11-18' && r[1]===tcbg.maBP);
 assert.equal(r18[5], 39, 'BC đầu ngày 18 = 34 + 5');
@@ -107,4 +109,20 @@ fail(call({action:'entryForm', token:tX1}), /bị khóa/);
 sheets.DanhMuc.data[11][5] = 50; sheets.DanhMuc.data[11][7] = '2026-11-18';
 assert.equal(ctx.recalcAll(), 1);
 assert.equal(sheets.NhapLieu.data.find(r => r[0]==='2026-11-18' && r[1]==='NM1-11')[5], 50);
+// Chuyển dữ liệu cấu trúc cũ (v1) sang v2
+{
+  const M = makeGlobals(), c2 = vm.createContext(M.g);
+  vm.runInContext(fs.readFileSync(__dirname + '/../apps-script/Core.gs', 'utf8'), c2);
+  vm.runInContext(fs.readFileSync(__dirname + '/../apps-script/Code.gs', 'utf8'), c2);
+  const old = M.g.SpreadsheetApp.getActiveSpreadsheet().insertSheet('NhapLieu');
+  old.data = [['Ngày','Mã BP','Đơn vị','Xưởng','Bộ phận','Chính thức đầu ngày','Thời vụ đầu ngày','Phép năm','Nghỉ không phép','Nghỉ ốm','Thai sản','Việc riêng','Mới (chính thức)','Mới (thời vụ)','Nghỉ việc (chính thức)','Nghỉ việc (thời vụ)','Tăng ca','Ghi chú','Tổng đầu ngày','Quân số trong ngày','Tổng vắng','Hiện diện','Tỷ lệ chuyên cần','Người nhập','Thời điểm nhập','Lần sửa','Nguồn'],
+    ['2026-11-17','NM1-11','NM1','NM1-X1','NM1 - TCBG',34,4,1,1,2,0,1,2,0,0,1,10,'ghi chú',38,39,5,34,0.8718,'A (NM1-X1)','2026-11-17 08:30:00',0,'FORM']];
+  c2.setup();
+  const nl = M.sheets.NhapLieu.data;
+  assert.equal(nl[0][7], 'Nghỉ phép (chính thức)'); assert.equal(nl.length, 2);
+  assert.deepEqual(nl[1].slice(0, 18), ['2026-11-17','NM1-11','NM1','NM1-X1','NM1 - TCBG',34,4,5,0,0,0,2,0,0,1,10,0,'ghi chú']);
+  assert.equal(nl[1][21], 34); assert.equal(nl[1][25], '2026-11-17 08:30:00'); assert.equal(nl[1][27], 'FORM');
+  assert.equal(M.sheets.NhapLieu_cu.data[1][9], 2, 'đã sao lưu bản cũ');
+  assert.equal(c2.migrateNhapLieuV2_(), 0, 'chỉ chuyển 1 lần');
+}
 console.log('GAS tests OK –', sheets.NhapLieu.getLastRow()-1, 'dòng dữ liệu,', sheets.LichSu.getLastRow()-1, 'dòng lịch sử');

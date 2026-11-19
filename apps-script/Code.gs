@@ -11,16 +11,22 @@
  * Xem README.md để biết từng bước.
  */
 
-var APP_VERSION = '1.0.0';
+var APP_VERSION = '2.0.0';
 var TZ = 'Asia/Ho_Chi_Minh';
 var SH = { DM: 'DanhMuc', ND: 'NguoiDung', NL: 'NhapLieu', LS: 'LichSu', CH: 'CauHinh', NN: 'NgayNghi' };
 
 var DM_COLS = ['STT', 'Mã BP', 'Đơn vị', 'Xưởng', 'Bộ phận', 'Chính thức gốc', 'Thời vụ gốc', 'Áp dụng từ (yyyy-mm-dd)', 'Hiển thị riêng', 'Đang dùng', 'Ghi chú'];
 var ND_COLS = ['Mã người dùng', 'Họ tên', 'Vai trò', 'Phạm vi', 'PIN (đã mã hóa)', 'Đang dùng', 'Ghi chú'];
-var NL_COLS = ['Ngày', 'Mã BP', 'Đơn vị', 'Xưởng', 'Bộ phận', 'Chính thức đầu ngày', 'Thời vụ đầu ngày', 'Phép năm', 'Nghỉ không phép',
-  'Nghỉ ốm', 'Thai sản', 'Việc riêng', 'Mới (chính thức)', 'Mới (thời vụ)', 'Nghỉ việc (chính thức)', 'Nghỉ việc (thời vụ)', 'Tăng ca', 'Ghi chú',
-  'Tổng đầu ngày', 'Quân số trong ngày', 'Tổng vắng', 'Hiện diện', 'Tỷ lệ chuyên cần', 'Người nhập', 'Thời điểm nhập', 'Lần sửa', 'Nguồn'];
-var NL_KEYS = ['ngay', 'maBP', 'donVi', 'xuong', 'boPhan', 'bcDau', 'tvDau', 'phepNam', 'khongPhep', 'om', 'thaiSan', 'viecRieng',
+// Cấu trúc sheet NhapLieu v2 (11/2026): Nghỉ phép CT/TV, Tăng cường đi/đến, Tăng ca người/giờ, Thực tế làm việc
+var NL_COLS = ['Ngày', 'Mã BP', 'Đơn vị', 'Xưởng', 'Bộ phận', 'Chính thức đầu ngày', 'Thời vụ đầu ngày',
+  'Nghỉ phép (chính thức)', 'Nghỉ phép (thời vụ)', 'Đi tăng cường', 'Đến tăng cường',
+  'Mới (chính thức)', 'Mới (thời vụ)', 'Nghỉ việc (chính thức)', 'Nghỉ việc (thời vụ)', 'Tăng ca (người)', 'Tăng ca (giờ)', 'Ghi chú',
+  'Tổng đầu ngày', 'Quân số trong ngày', 'Tổng vắng', 'Hiện diện', 'Tỷ lệ chuyên cần', 'Thực tế làm việc', 'Người nhập', 'Thời điểm nhập', 'Lần sửa', 'Nguồn'];
+var NL_KEYS = ['ngay', 'maBP', 'donVi', 'xuong', 'boPhan', 'bcDau', 'tvDau', 'vangBC', 'vangTV', 'diTC', 'denTC',
+  'moiBC', 'moiTV', 'nvBC', 'nvTV', 'tangCa', 'gioTC', 'ghiChu', 'tongDau', 'quanSo', 'tongVang', 'hienDien', 'tyLe', 'thucTe',
+  'nguoiNhap', 'thoiDiem', 'lanSua', 'nguon'];
+// Cấu trúc cũ v1 – chỉ dùng để chuyển đổi dữ liệu đã nhập trước đây
+var NL_KEYS_V1 = ['ngay', 'maBP', 'donVi', 'xuong', 'boPhan', 'bcDau', 'tvDau', 'phepNam', 'khongPhep', 'om', 'thaiSan', 'viecRieng',
   'moiBC', 'moiTV', 'nvBC', 'nvTV', 'tangCa', 'ghiChu', 'tongDau', 'quanSo', 'tongVang', 'hienDien', 'tyLe',
   'nguoiNhap', 'thoiDiem', 'lanSua', 'nguon'];
 var LS_COLS = ['Thời điểm', 'Người thực hiện', 'Hành động', 'Ngày số liệu', 'Mã BP', 'Bộ phận', 'Trước', 'Sau', 'Lý do'];
@@ -72,6 +78,7 @@ function onOpen() {
     .addItem('1. Khởi tạo hệ thống (chạy 1 lần)', 'setup')
     .addItem('2. Cấp PIN mới cho người dùng', 'menuResetPin')
     .addItem('3. Tính lại quân số cuốn chiếu', 'menuRecalcAll')
+    .addItem('4. Chuyển dữ liệu sang cấu trúc mới (v2)', 'menuMigrate')
     .addSeparator()
     .addItem('Kiểm tra cấu hình', 'menuCheck')
     .addToUi();
@@ -103,9 +110,10 @@ function setup() {
 
   var nl = ensureSheet_(ss, SH.NL, NL_COLS);
   nl.getRange('A:A').setNumberFormat('@');
-  nl.getRange('Y:Y').setNumberFormat('@');
+  nl.getRange('Z:Z').setNumberFormat('@');
   nl.getRange('W:W').setNumberFormat('0.0%');
   ensureSheet_(ss, SH.LS, LS_COLS).getRange('A:A').setNumberFormat('@');
+  migrateNhapLieuV2_();
   ensureSheet_(ss, SH.NN, NN_COLS).getRange('A:A').setNumberFormat('@');
 
   var nd = ensureSheet_(ss, SH.ND, ND_COLS);
@@ -160,6 +168,11 @@ function resetPin(ma) {
     }
   }
   throw new Error('Không tìm thấy người dùng ' + ma);
+}
+
+function menuMigrate() {
+  var n = migrateNhapLieuV2_();
+  SpreadsheetApp.getUi().alert(n ? 'Đã chuyển ' + n + ' dòng sang cấu trúc mới. Bản cũ lưu ở sheet ' + SH.NL + '_cu.' : 'Sheet NhapLieu đã ở cấu trúc mới.');
 }
 
 function menuRecalcAll() {
@@ -364,7 +377,13 @@ function apiMonthly_(req) {
   return { ok: true, report: NSCore.monthlyReport(ix, ym, today) };
 }
 function apiDashboard_(req) {
-  var ymd = checkViewDate_(req.ngay), ix = NSCore.buildIndex(loadCtx_());
+  var ymd = checkViewDate_(req.ngay), ctx = loadCtx_(), dv = String(req.donVi || '').toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  if (dv) { // xem riêng một đơn vị (NM1/NM2...) hoặc KTB = bộ phận hiển thị riêng (Kho Thanh Bình)
+    var keep = {};
+    ctx.danhMuc = ctx.danhMuc.filter(function (bp) { if (dv === 'KTB' ? bp.rieng : bp.donVi === dv) { keep[bp.maBP] = 1; return true; } return false; });
+    ctx.records = ctx.records.filter(function (r) { return keep[r.maBP]; });
+  }
+  var ix = NSCore.buildIndex(ctx);
   return { ok: true, report: NSCore.dashboard(ix, ymd), now: nowVN_() };
 }
 function apiStatus_(req) {
@@ -500,7 +519,42 @@ function loadDanhMuc_() {
   return out;
 }
 
+/**
+ * Chuyển sheet NhapLieu từ cấu trúc cũ (Phép năm, Không phép, Ốm, Thai sản, Việc riêng) sang cấu trúc v2.
+ * Tổng vắng cũ được cộng vào "Nghỉ phép (chính thức)" (dữ liệu cũ không tách CT/TV).
+ * Trước khi chuyển, toàn bộ sheet cũ được sao lưu sang sheet "NhapLieu_cu". Chạy tự động, chỉ 1 lần.
+ */
+function migrateNhapLieuV2_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(SH.NL);
+  if (!sh || String(sh.getRange(1, 8).getValue()).trim() !== 'Phép năm') return 0;
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    if (String(sh.getRange(1, 8).getValue()).trim() !== 'Phép năm') return 0;
+    var last = sh.getLastRow(), oldVals = sh.getRange(1, 1, Math.max(1, last), NL_KEYS_V1.length).getValues();
+    var bk = ss.getSheetByName(SH.NL + '_cu') || ss.insertSheet(SH.NL + '_cu');
+    if (bk.getLastRow() < 1) bk.getRange(1, 1, oldVals.length, NL_KEYS_V1.length).setValues(oldVals);
+    var out = [NL_COLS];
+    for (var i = 1; i < oldVals.length; i++) {
+      var v = oldVals[i], r = {};
+      NL_KEYS_V1.forEach(function (k, j) { r[k] = v[j]; });
+      r.vangBC = NSCore.VANG_V1.reduce(function (s, f) { return s + (Number(r[f]) || 0); }, 0);
+      r.vangTV = 0; r.diTC = 0; r.denTC = 0; r.gioTC = 0;
+      var hasData = v.some(function (x) { return x !== '' && x !== null; });
+      out.push(hasData ? recordToRow_(r) : NL_KEYS.map(function () { return ''; }));
+    }
+    sh.getRange(1, 1, out.length, NL_COLS.length).setValues(out);
+    sh.getRange(1, 1, 1, NL_COLS.length).setFontWeight('bold').setBackground('#e8eef7');
+    sh.getRange('Z:Z').setNumberFormat('@');
+    log_([[ts_(), 'Hệ thống', 'Chuyển cấu trúc v2', '', '', '', 'Cấu trúc cũ (sao lưu: ' + SH.NL + '_cu)', (out.length - 1) + ' dòng', 'Nghỉ phép CT/TV, tăng cường, giờ tăng ca']]);
+    return out.length - 1;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function loadRecords_() {
+  migrateNhapLieuV2_();
   var sh = sheet_(SH.NL), last = sh.getLastRow();
   if (last < 2) return [];
   var vals = sh.getRange(2, 1, last - 1, NL_COLS.length).getValues(), out = [];
@@ -559,7 +613,8 @@ function makeRecord_(ymd, bp, base, values, user, now, existing, nguon) {
 function recordToRow_(r) {
   var d = NSCore.derive(r), all = {};
   NL_KEYS.forEach(function (k) { all[k] = r[k]; });
-  all.tongDau = d.tongDau; all.quanSo = d.quanSo; all.tongVang = d.tongVang; all.hienDien = d.hienDien;
+  NSCore.FIELDS.forEach(function (f) { all[f] = d[f]; });
+  all.tongDau = d.tongDau; all.quanSo = d.quanSo; all.tongVang = d.tongVang; all.hienDien = d.hienDien; all.thucTe = d.thucTe;
   all.tyLe = d.tyLe === null ? '' : Math.round(d.tyLe * 10000) / 10000;
   return NL_KEYS.map(function (k) { var v = all[k]; return v === undefined || v === null ? '' : v; });
 }
