@@ -308,3 +308,19 @@ pre.bulletin { white-space: pre-wrap; margin: 0; padding: 12px 14px; background:
 @media print {
   .nav, .logo { display: none !important; }
 }
+
+/* Phân nhóm màu trong form nhập liệu: vắng / nhân sự mới / nghỉ việc */
+.entry th.g-vang { background: #f6dede; color: #800a0a; }
+.entry th.g-moi { background: #dff1db; color: #1e4d2b; }
+.entry th.g-nghi { background: #e4e4e1; color: #444; }
+@media (min-width: 761px) {
+  .entry td.c-v { background: #fcf3f3; }
+  .entry td.c-m { background: #f3faf1; }
+  .entry td.c-n { background: #f4f4f2; }
+  .entry td.c-v .cell-in, .entry td.c-m .cell-in, .entry td.c-n .cell-in { background: #fff; }
+}
+@media (max-width: 760px) {
+  .entry td.c-v { border-left: 4px solid #800a0a; }
+  .entry td.c-m { border-left: 4px solid #77bb6e; }
+  .entry td.c-n { border-left: 4px solid #9a9a96; }
+}
