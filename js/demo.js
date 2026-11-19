@@ -83,7 +83,7 @@ var Demo = (function () {
   }
 
   function ix(dv) {
-    var dm = dv ? danhMuc.filter(function (bp) { return bp.donVi === dv; }) : danhMuc;
+    var dm = dv ? danhMuc.filter(function (bp) { return dv === 'KTB' ? bp.rieng : bp.donVi === dv; }) : danhMuc;
     var set = {}; dm.forEach(function (bp) { set[bp.maBP] = 1; });
     return C.buildIndex({ danhMuc: dm, records: dv ? records.filter(function (r) { return set[r.maBP]; }) : records, cfg: cfg, ngayNghi: [] });
   }

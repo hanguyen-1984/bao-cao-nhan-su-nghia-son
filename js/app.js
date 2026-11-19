@@ -435,14 +435,14 @@
   }
   function renderDash(R, now, dv) {
     cleanupCharts(); dv = dv || '';
-    var scopeName = dv || 'toàn công ty';
+    var DVN = { NM1: 'NM1', NM2: 'NM2', KTB: 'Kho Thanh Bình' }, scopeName = DVN[dv] || dv || 'toàn công ty';
     var t = R.tong, cfg = S.cfg, isToday = R.ngay === todayVN();
-    var units = R.groups.filter(function (g) { return g.nhom !== 'tong'; });
-    var html = '<div class="page-head"><div><h1>Dashboard nhân sự' + (dv ? ' ' + esc(dv) : '') + ' – ' + esc(C.thuDayDu(R.ngay)) + ', ' + fd(R.ngay) + '</h1><div class="sub">' +
+    var units = R.groups.filter(function (g) { return g.nhom !== 'tong' && !(dv === 'KTB' && g.nhom === 'donvi'); });
+    var html = '<div class="page-head"><div><h1>Dashboard nhân sự' + (dv ? ' ' + esc(scopeName) : '') + ' – ' + esc(C.thuDayDu(R.ngay)) + ', ' + fd(R.ngay) + '</h1><div class="sub">' +
       '<span class="chip ' + (R.daNhap === R.tongBP ? 'good' : R.daNhap ? 'warn' : 'crit') + '">Đã nhập ' + R.daNhap + '/' + R.tongBP + ' bộ phận</span> ' +
       (isToday && now ? '<span class="muted">Cập nhật lúc ' + esc(now.hm) + ' · tự làm mới mỗi ' + (CFG.AUTO_REFRESH_PHUT || 5) + ' phút</span>' : '') +
       (!R.ngayLamViec ? ' <span class="chip">Ngày nghỉ theo lịch</span>' : '') + '</div></div>' +
-      '<div class="tools"><select class="input" id="d-dv" aria-label="Chọn đơn vị xem"><option value="">Xem chung (NM1 + NM2)</option><option value="NM1"' + (dv === 'NM1' ? ' selected' : '') + '>Chỉ NM1</option><option value="NM2"' + (dv === 'NM2' ? ' selected' : '') + '>Chỉ NM2</option></select>' +
+      '<div class="tools"><select class="input" id="d-dv" aria-label="Chọn đơn vị xem">' + [['', 'Tất cả'], ['NM1', 'Chỉ NM1'], ['NM2', 'Chỉ NM2'], ['KTB', 'Kho Thanh Bình']].map(function (o) { return '<option value="' + o[0] + '"' + (dv === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
       '<input type="date" class="input" id="d-ngay" max="' + todayVN() + '" value="' + R.ngay + '"><button class="btn" id="d-today">Hôm nay</button>' +
       '<button class="btn" id="d-reload">Làm mới</button></div></div>';
     if (!t.soBP) {
@@ -479,7 +479,7 @@
     $('#btn-copy').onclick = function () { copyText(R.banTin); };
     trendChart($('#c-trend'), R.trend.map(function (x) { return shortDate(x.ngay); }),
       (dv ? [] : [{ label: 'Toàn công ty', color: COLOR.tong, data: R.trend.map(function (x) { return x.tyLe; }), dash: [5, 4] }]).concat(R.nhomDefs.map(function (g, i) {
-        return { label: g.label, color: unitColor(g.key, i), data: R.trend.map(function (x) { return x.nhom[g.key]; }) };
+        return { label: dv === 'KTB' ? 'Kho Thanh Bình' : g.label, color: dv === 'KTB' ? COLOR.rieng : unitColor(g.key, i), data: R.trend.map(function (x) { return x.nhom[g.key]; }) };
       })));
     mkChart($('#c-vang'), {
       type: 'bar',
