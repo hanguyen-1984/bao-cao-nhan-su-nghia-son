@@ -204,7 +204,7 @@
       return '<tr data-ma="' + esc(r.maBP) + '" data-x="' + esc(xKey(r)) + '"><td class="bp sticky-col">' + esc(r.boPhan) + '<small>' + esc(r.maBP) +
         ' · ' + esc(xKey(r).split(' · ')[1]) + '</small></td><td class="calc" data-label="Đầu ngày: Chính thức">' + r.bcDau + '</td><td class="calc" data-label="Đầu ngày: Thời vụ">' + r.tvDau + '</td>' +
         GCOLS.map(function (c) {
-          return '<td data-label="' + esc(GLABEL[c.f]) + '"><input class="cell-in" data-f="' + c.f + '" inputmode="numeric" autocomplete="off" value="' + (r.values ? esc(v[c.f]) : '') + '"' +
+          return '<td data-label="' + esc(GLABEL[c.f]) + '"><input class="cell-in" data-f="' + c.f + '" inputmode="numeric" autocomplete="off" value="' + (r.values ? esc(v[c.f]) : '0') + '"' +
             (ro ? ' disabled' : '') + ' aria-label="' + esc(r.boPhan + ' – ' + C.LABELS[c.f]) + '"></td>';
         }).join('') +
         '<td class="calc qs" data-label="Quân số trong ngày"></td><td class="calc hd" data-label="Hiện diện"></td><td class="calc tl" data-label="Tỷ lệ"></td><td class="nt" data-label="Ghi chú"><input class="cell-in note" data-f="ghiChu" maxlength="500" value="' +
@@ -221,18 +221,19 @@
   }
   function readRow(tr) {
     var o = {};
-    $$('input[data-f]', tr).forEach(function (i) { o[i.dataset.f] = i.value.trim(); });
+    $$('input[data-f]', tr).forEach(function (i) { var x = i.value.trim(); o[i.dataset.f] = (x === '' && i.dataset.f !== 'ghiChu') ? '0' : x; });
     return o;
   }
   function evalRow(tr) {
     var r = E.byMa[tr.dataset.ma], raw = readRow(tr), orig = r.values;
-    var blanks = C.FIELDS.filter(function (f) { return raw[f] === ''; }).length;
+    var blanks = 0; // ô trống mặc định là 0 – không bắt buộc nhập
     var dirty = orig ? (C.FIELDS.some(function (f) { return String(orig[f]) !== raw[f]; }) || String(orig.ghiChu || '') !== raw.ghiChu)
-      : (blanks < C.FIELDS.length || raw.ghiChu !== '');
+      : (C.FIELDS.some(function (f) { return raw[f] !== '0'; }) || raw.ghiChu !== '');
+    var pending = !orig && E.mode === 'entry' && !isReadOnly(r);
     var tmp = { bcDau: r.bcDau, tvDau: r.tvDau };
     C.FIELDS.forEach(function (f) { var n = Number(raw[f]); tmp[f] = raw[f] === '' || isNaN(n) ? 0 : n; });
     var d = C.derive(tmp), errors = [], warnings = [];
-    if (blanks === 0) { var v = C.validateEntry(raw, { bc: r.bcDau, tv: r.tvDau }, S.cfg); errors = v.errors; warnings = v.warnings; }
+    { var v = C.validateEntry(raw, { bc: r.bcDau, tv: r.tvDau }, S.cfg); errors = v.errors; warnings = v.warnings; }
     $$('input.cell-in', tr).forEach(function (i) {
       if (i.dataset.f === 'ghiChu') return;
       var x = i.value.trim();
@@ -240,16 +241,16 @@
     });
     $('.qs', tr).textContent = d.quanSo;
     $('.hd', tr).textContent = d.hienDien;
-    var tl = $('.tl', tr), m = blanks < C.FIELDS.length ? C.mucDo(d, S.cfg) : '';
-    tl.textContent = blanks < C.FIELDS.length && d.tyLe !== null ? fp(d.tyLe) : '';
+    var tl = $('.tl', tr), m = C.mucDo(d, S.cfg);
+    tl.textContent = d.tyLe !== null ? fp(d.tyLe) : '';
     tl.className = 'calc tl ' + lvlClass(m);
     tr.classList.toggle('dirty', dirty);
     tr.classList.toggle('err', errors.length > 0);
     tr.classList.toggle('warn', !errors.length && warnings.length > 0);
     var res = E.results[r.maBP], st = '';
     if (errors.length) st = errors.map(function (e) { return '<span class="e">' + esc(e) + '</span>'; }).join('');
-    else if (dirty && blanks) st = '<span class="w">Còn ' + blanks + ' ô trống (không có thì ghi 0)</span>';
     else if (dirty) st = '<span class="w">● Chưa gửi</span>' + warnings.map(function (w) { return '<span class="w">' + esc(w) + '</span>'; }).join('');
+    else if (pending && !dirty) st = '<span class="muted">Mặc định 0 · chưa gửi</span>';
     else if (res && !res.ok) st = (res.errors || []).map(function (e) { return '<span class="e">' + esc(e) + '</span>'; }).join('');
     else if (r.daNhap) {
       var who = /\(([^)]+)\)\s*$/.exec(r.nguoiNhap || '');
@@ -259,18 +260,19 @@
     } else st = '<span class="muted">Chưa nhập</span>';
     $('.st', tr).innerHTML = st;
     tr.classList.toggle('saved', !dirty && !!r.daNhap);
-    E.state[r.maBP] = { raw: raw, blanks: blanks, dirty: dirty, errors: errors, warnings: warnings };
+    E.state[r.maBP] = { raw: raw, blanks: blanks, dirty: dirty, pending: pending, errors: errors, warnings: warnings };
   }
   function refreshSaveBar() {
     var st = E.state, ks = Object.keys(st), dirty = ks.filter(function (k) { return st[k].dirty; });
-    var bad = dirty.filter(function (k) { return st[k].errors.length || st[k].blanks; });
+    var send = ks.filter(function (k) { return st[k].dirty || st[k].pending; });
+    var bad = send.filter(function (k) { return st[k].errors.length; });
     S.dirty = dirty.length > 0;
     var msg = $('#save-msg'), btn = $('#btn-save');
     if (!msg) return;
     var done = E.data.rows.filter(function (r) { return r.daNhap; }).length;
     msg.innerHTML = 'Đã nhập <b>' + done + '/' + E.data.rows.length + '</b> bộ phận' +
-      (dirty.length ? ' · <b>' + dirty.length + '</b> dòng chưa gửi' : '') + (bad.length ? ' · <span style="color:var(--crit)">' + bad.length + ' dòng cần sửa</span>' : '');
-    btn.disabled = !dirty.length || (E.mode === 'entry' && E.data.khoa);
+      (send.length ? ' · <b>' + send.length + '</b> dòng chưa gửi' : '') + (bad.length ? ' · <span style="color:var(--crit)">' + bad.length + ' dòng cần sửa</span>' : '');
+    btn.disabled = !send.length || (E.mode === 'entry' && E.data.khoa);
   }
   function bindGrid(root) {
     var tb = $('tbody', root);
@@ -292,21 +294,14 @@
       do { sib = dir > 0 ? sib.nextElementSibling : sib.previousElementSibling; } while (sib && sib.style.display === 'none');
       if (sib) { var n = $('input[data-f="' + i.dataset.f + '"]', sib); if (n && !n.disabled) { n.focus(); n.select(); } }
     });
+    tb.addEventListener('focusout', function (ev) {
+      var i = ev.target;
+      if (i.classList.contains('cell-in') && i.dataset.f !== 'ghiChu' && !i.disabled && i.value.trim() === '') {
+        i.value = '0'; var tr = i.closest('tr'); evalRow(tr); refreshSaveBar();
+      }
+    });
     tb.addEventListener('focusin', function (ev) { if (ev.target.classList.contains('cell-in')) ev.target.select(); });
     refreshSaveBar();
-  }
-  function fillZero() {
-    var n = 0;
-    $$('#grid tbody tr').forEach(function (tr) {
-      if (tr.style.display === 'none') return;
-      var r = E.byMa[tr.dataset.ma];
-      if (r.daNhap || isReadOnly(r)) return;
-      var changed = false;
-      $$('input.cell-in', tr).forEach(function (i) { if (i.dataset.f !== 'ghiChu' && i.value.trim() === '' && !i.disabled) { i.value = '0'; changed = true; } });
-      if (changed) { evalRow(tr); n++; }
-    });
-    refreshSaveBar();
-    toast(n ? 'Đã điền 0 cho ' + n + ' bộ phận chưa nhập. Kiểm tra lại rồi bấm Gửi.' : 'Không có ô trống nào cần điền.');
   }
   function applyFilter() {
     var x = $('#f-xuong') ? $('#f-xuong').value : '', q = ($('#f-q') ? $('#f-q').value : '').trim().toLowerCase(), only = $('#f-chua') && $('#f-chua').checked;
@@ -317,15 +312,13 @@
     });
   }
   function collectForSubmit() {
-    var st = E.state, dirty = Object.keys(st).filter(function (k) { return st[k].dirty; });
+    var st = E.state, dirty = Object.keys(st).filter(function (k) { return st[k].dirty || st[k].pending; });
     if (!dirty.length) { toast('Không có thay đổi nào để gửi.'); return null; }
-    var inc = dirty.filter(function (k) { return st[k].blanks; }), bad = dirty.filter(function (k) { return st[k].errors.length; });
-    if (inc.length || bad.length) {
-      var names = inc.concat(bad).map(function (k) { return E.byMa[k].boPhan; });
-      toast((inc.length ? inc.length + ' bộ phận còn ô trống' : '') + (inc.length && bad.length ? ', ' : '') + (bad.length ? bad.length + ' bộ phận có lỗi' : '') +
-        ':\n' + uniq(names).slice(0, 6).join('\n'), 'err');
-      var first = $('#grid tr[data-ma="' + (inc[0] || bad[0]) + '"]');
-      if (first) { first.style.display = ''; var inp = $('input.bad', first) || $$('input.cell-in', first).filter(function (i) { return i.value === ''; })[0]; if (inp) inp.focus(); }
+    var bad = dirty.filter(function (k) { return st[k].errors.length; });
+    if (bad.length) {
+      toast(bad.length + ' bộ phận có lỗi:\n' + uniq(bad.map(function (k) { return E.byMa[k].boPhan; })).slice(0, 6).join('\n'), 'err');
+      var first = $('#grid tr[data-ma="' + bad[0] + '"]');
+      if (first) { first.style.display = ''; var inp = $('input.bad', first) || $$('input.cell-in', first)[0]; if (inp) inp.focus(); }
       return null;
     }
     return dirty.map(function (k) { return { maBP: k, values: st[k].raw }; });
@@ -353,9 +346,9 @@
         xs.map(function (x) { return '<option>' + esc(x) + '</option>'; }).join('') + '</select>' : '') +
       '<input class="input" id="f-q" placeholder="Tìm bộ phận…" style="width:170px">' +
       '<label class="chip" style="cursor:pointer"><input type="checkbox" id="f-chua"> Chỉ bộ phận chưa nhập</label>' +
-      '<button class="btn" id="btn-zero"' + (data.khoa ? ' disabled' : '') + '>Điền 0 vào ô trống</button></div></div>';
+      '</div></div>';
     if (data.khoa) html += '<div class="banner crit">Đã quá giờ chốt ' + esc(data.gioChot) + ' – số liệu hôm nay đã khóa. Cần bổ sung/sửa, liên hệ Phòng Nhân sự (Admin nhập bù, có ghi lịch sử).</div>';
-    else html += '<div class="banner info">Chỉ nhập được cho <b>ngày hôm nay</b> theo giờ máy chủ – không nhập lùi, không nhập trước. Bộ phận không có người vắng/mới/nghỉ việc vẫn ghi <b>0</b> để xác nhận đã báo cáo. Enter/↓ để xuống dòng.</div>';
+    else html += '<div class="banner info">Chỉ nhập được cho <b>ngày hôm nay</b> theo giờ máy chủ – không nhập lùi, không nhập trước. Các ô mặc định là <b>0</b>, không bắt buộc nhập – chỉ sửa ô có số liệu rồi bấm <b>Gửi số liệu</b> (bộ phận không đổi vẫn được ghi 0 và tính là đã báo cáo). Enter/↓ để xuống dòng.</div>';
     if (!data.ngayLamViec) html += '<div class="banner warn">Hôm nay là ngày nghỉ theo lịch. Chỉ nhập nếu bộ phận có đi làm.</div>';
     if (!data.rows.length) html += '<div class="card empty">Tài khoản chưa được phân công bộ phận nào. Liên hệ Phòng Nhân sự.</div>';
     else html += '<div id="grid">' + gridHTML(data.rows, false) + '</div><div class="savebar"><span class="msg" id="save-msg"></span><span style="margin-left:auto"></span>' +
@@ -371,7 +364,6 @@
     bindGrid($('#grid'));
     applyFilter();
     ['f-xuong', 'f-q', 'f-chua'].forEach(function (id) { var el = $('#' + id); if (el) el.addEventListener('input', applyFilter); });
-    $('#btn-zero').onclick = fillZero;
     $('#btn-reload').onclick = function () { if (!S.dirty || confirm('Bỏ các thay đổi chưa gửi?')) { S.dirty = false; viewNhap(); } };
     $('#btn-save').onclick = function () {
       var rows = collectForSubmit();
@@ -722,7 +714,7 @@
     (results || []).forEach(function (r) { E.results[r.maBP] = r; });
     var html = '<div class="page-head"><div><h1>Nhập bù / sửa số liệu ngày ' + esc(data.thu) + ', ' + fd(data.ngay) + '</h1><div class="sub">Chỉ Admin. Mọi thay đổi ghi vào sheet LichSu kèm lý do; quân số các ngày sau tự tính lại.</div></div>' +
       '<div class="tools"><input type="date" class="input" id="a-ngay" max="' + todayVN() + '" value="' + data.ngay + '"><input class="input" id="f-q" placeholder="Tìm bộ phận…" style="width:160px">' +
-      '<label class="chip" style="cursor:pointer"><input type="checkbox" id="f-chua"> Chỉ bộ phận chưa nhập</label><button class="btn" id="btn-zero">Điền 0 vào ô trống</button></div></div>' +
+      '<label class="chip" style="cursor:pointer"><input type="checkbox" id="f-chua"> Chỉ bộ phận chưa nhập</label></div></div>' +
       '<div id="grid">' + gridHTML(data.rows, true) + '</div><div class="savebar"><span class="msg" id="save-msg"></span><input class="input" id="a-lydo" placeholder="Lý do nhập bù/sửa (bắt buộc)" style="flex:1;min-width:240px">' +
       '<button class="btn primary" id="btn-save">Lưu thay đổi</button></div>';
     $('#qt').innerHTML = html;
@@ -734,7 +726,6 @@
     bindGrid($('#grid'));
     applyFilter();
     ['f-q', 'f-chua'].forEach(function (id) { $('#' + id).addEventListener('input', applyFilter); });
-    $('#btn-zero').onclick = fillZero;
     $('#a-ngay').onchange = function () { if (this.value && (!S.dirty || confirm('Bỏ các thay đổi chưa lưu?'))) { S.dirty = false; go('#/quan-tri/nhap-bu?ngay=' + this.value); } };
     $('#btn-save').onclick = function () {
       var rows = collectForSubmit();
