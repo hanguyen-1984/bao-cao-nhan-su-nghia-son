@@ -29,11 +29,12 @@ Tài khoản demo: `ADMIN`, `BGD`, `NM1-VP`, `NM1-X1`, `NM1-X2`, `NM1-KHO`, `NM2
 | **Giờ chốt** | Mặc định 23:59 (`CauHinh` › `GIO_CHOT`). Quá giờ chốt thì form khóa. |
 | **Sửa trong ngày** | Được sửa trước giờ chốt (`CHO_SUA_TRONG_NGAY = TRUE`). Nếu đặt `FALSE` thì mỗi bộ phận chỉ gửi được 1 lần/ngày. |
 | **Ngày đã qua** | Chỉ **Admin** được nhập bù, sửa hoặc xóa, và **bắt buộc ghi lý do**. Mỗi thao tác được ghi vào sheet `LichSu` (giá trị trước, giá trị sau, người làm, thời điểm). |
-| **Bắt buộc đủ ô** | Bộ phận không có người vắng / mới / nghỉ việc vẫn phải ghi 0. Nút "Điền 0 vào ô trống" giúp nhập nhanh. |
-| **Kiểm tra số liệu** | Chỉ nhận số nguyên ≥ 0. Tổng vắng không được lớn hơn quân số trong ngày, và số nghỉ việc không được lớn hơn quân số chính thức hoặc thời vụ. Hệ thống chỉ cảnh báo (không chặn) khi tăng ca nhiều hơn số hiện diện hoặc tỷ lệ chuyên cần dưới 90%. |
+| **Ô mặc định 0** | Mọi ô số mặc định là 0, không bắt buộc nhập. Bấm **Gửi số liệu** thì các bộ phận chưa đổi gì cũng được ghi 0 và tính là đã báo cáo. |
+| **Các trường nhập (cấu trúc v2, 11/2026)** | **Nghỉ phép** (chính thức / thời vụ) = tổng số người vắng, thay cho Phép năm, Không phép, Ốm, Thai sản, Việc riêng. **Tăng cường**: đi tăng cường / đến tăng cường. **Nhân sự mới**, **Nghỉ việc** (chính thức / thời vụ). **Tăng ca**: số người và tổng số giờ của bộ phận (bước 0,5 giờ). |
+| **Kiểm tra số liệu** | Số nguyên ≥ 0 (riêng giờ tăng ca nhận số lẻ 0,5). Nghỉ phép chính thức / thời vụ không lớn hơn quân số chính thức / thời vụ trong ngày; nghỉ việc không lớn hơn quân số; đi tăng cường không lớn hơn số hiện diện; có giờ tăng ca thì phải có số người tăng ca. Chỉ cảnh báo (không chặn) khi tăng ca nhiều hơn số người thực tế làm việc, có người tăng ca mà chưa nhập giờ, bình quân trên 12 giờ/người, hoặc tỷ lệ chuyên cần dưới 90%. |
 | **Quân số cuốn chiếu** | Quân số đầu ngày bằng quân số cuối ngày của lần nhập gần nhất trước đó: đầu ngày + mới − nghỉ việc, tách riêng chính thức và thời vụ. Quân số của mỗi ngày được **lưu lại cùng dòng dữ liệu**, nên sửa danh mục không làm đổi số liệu các ngày đã qua. |
 | **Chỉnh quân số gốc** | Sửa `Chính thức gốc` / `Thời vụ gốc` trong `DanhMuc`, điền `Áp dụng từ` (yyyy-mm-dd), rồi chạy menu **Nhân sự NS › Tính lại quân số cuốn chiếu**. Các ngày trước ngày áp dụng giữ nguyên. |
-| **Cách tính** (giữ như file Excel) | Quân số trong ngày = đầu ngày + mới − nghỉ việc. Hiện diện = quân số trong ngày − tổng vắng. Tỷ lệ chuyên cần = hiện diện ÷ quân số trong ngày. Tỷ lệ chỉ tính các bộ phận đã nhập. |
+| **Cách tính** (giữ như file Excel) | Quân số trong ngày = đầu ngày + mới − nghỉ việc. Hiện diện = quân số trong ngày − nghỉ phép (CT + TV). Tỷ lệ chuyên cần = hiện diện ÷ quân số trong ngày. Tỷ lệ chỉ tính các bộ phận đã nhập. **Tăng cường chỉ ghi nhận, không tính vào tỷ lệ**: Thực tế làm việc = hiện diện − đi tăng cường + đến tăng cường. |
 | **Kho Thanh Bình** | Thuộc NM1 và được hiển thị thêm một dòng riêng (cột `Hiển thị riêng` trong `DanhMuc`). Bộ phận nào khác cần hiển thị riêng thì tick cột này. |
 | **Ngày nghỉ** | `NGAY_NGHI_TUAN` (mặc định CN) và sheet `NgayNghi` (ngày lễ) chỉ dùng để nhắc "chưa nhập". Ngày nghỉ mà có đi làm thì vẫn nhập được. |
 
@@ -111,8 +112,8 @@ PIN được lưu ở dạng mã hóa SHA-256 có salt. Nhập sai 5 lần thì 
 
 | Ai | Làm gì |
 |---|---|
-| Người nhập (theo xưởng) | Vào **Nhập liệu** và lọc theo xưởng nếu cần. Bấm **Điền 0 vào ô trống**, sửa các ô có phát sinh, rồi bấm **Gửi số liệu**. Phím Enter / ↓ để xuống dòng. Dòng vàng là chưa gửi, viền đỏ là có lỗi, viền xanh là đã lưu. |
-| Nhân sự / BGĐ | Xem **Dashboard** (tự làm mới mỗi 5 phút): tỷ lệ chuyên cần, theo đơn vị và xưởng, xu hướng 45 ngày, cơ cấu vắng, bộ phận thấp nhất, danh sách chưa nhập. Bấm **Sao chép bản tin** để gửi Zalo. |
+| Người nhập (theo xưởng) | Vào **Nhập liệu** và lọc theo xưởng nếu cần. Các ô đã có sẵn 0: chỉ sửa ô có phát sinh rồi bấm **Gửi số liệu**. Phím Enter / ↓ để xuống dòng. Dòng vàng là chưa gửi, viền đỏ là có lỗi, viền xanh là đã lưu. |
+| Nhân sự / BGĐ | Xem **Dashboard** (tự làm mới mỗi 5 phút): tỷ lệ chuyên cần, theo đơn vị và xưởng, xu hướng 45 ngày, nghỉ phép CT/TV và tăng cường theo đơn vị, tăng ca (người, giờ), chọn xem Tất cả / NM1 / NM2 / Kho Thanh Bình, bộ phận thấp nhất, danh sách chưa nhập. Bấm **Sao chép bản tin** để gửi Zalo. |
 | Báo cáo | **Báo cáo ngày** (theo mẫu file Excel: tổng hợp, chi tiết, biến động), **Tổng hợp tháng**, **Theo bộ phận (tháng)** (sắp xếp được), **Tình trạng nhập**. Có nút Xuất CSV và In. |
 | Admin | **Quản trị › Nhập bù / sửa**: chọn ngày cũ, sửa, ghi lý do, lưu. Quân số các ngày sau được tính lại tự động. **Lịch sử chỉnh sửa** lưu toàn bộ thao tác. |
 
@@ -146,6 +147,6 @@ ci/kiem-tra.yml         GitHub Actions – chuyển vào .github/workflows/ khi 
 ## 7. Những điểm đã thay đổi so với file Excel
 - Có thêm 2 cột nhân sự **mới** và **nghỉ việc** tách theo **chính thức / thời vụ**, để quân số cuốn chiếu đúng cho từng loại.
 - Quân số không còn cố định theo danh mục. Quân số được chuyển tiếp mỗi ngày và lưu lại theo ngày.
-- Đã sửa trường hợp chỉ nhập tăng ca mà vẫn được tính "Đã nhập". Bây giờ phải điền đủ mọi ô.
+- Cấu trúc v2 (11/2026): các loại vắng gộp thành **Nghỉ phép** tách chính thức / thời vụ; thêm **Tăng cường** (đi / đến) và **Số giờ tăng ca**. Sheet `NhapLieu` tự chuyển sang cấu trúc mới ở lần mở đầu tiên (hoặc menu **Nhân sự NS › Chuyển dữ liệu sang cấu trúc mới**): tổng vắng cũ được cộng vào Nghỉ phép chính thức, bản cũ sao lưu ở sheet `NhapLieu_cu`.
 - Hàm MAXIFS không còn cần thiết, vì mọi phép tính chạy trên Apps Script và trình duyệt.
 - Giữ nguyên tên bộ phận gốc, kể cả "NGUYÊN LIÊỤ", để khớp với các file khác. Theo file Excel mới, dòng BGĐ trong khối NM2 đã chuyển thành **NM2 - BGĐ**, thuộc NM2. Tổng quân số vẫn là 519 người: NM1 có 187 chính thức + 50 thời vụ, NM2 có 206 chính thức + 76 thời vụ.

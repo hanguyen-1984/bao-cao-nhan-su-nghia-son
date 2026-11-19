@@ -27,6 +27,9 @@ Thay file Excel `Mau_nhap_so_lieu_nhan_su_hang_ngay_NM1_NM2_2.xlsx` bằng một
 | Ngày đã qua | Chỉ ADMIN được nhập bù, sửa hoặc xóa, bắt buộc ghi lý do và có lưu lịch sử (sheet `LichSu`). |
 | Quân số | Tự cuốn chiếu theo ngày: đầu ngày + mới − nghỉ việc, tách chính thức và thời vụ, lưu lại theo từng ngày. |
 | Kho Thanh Bình | Thuộc NM1 và có thêm một dòng riêng trong báo cáo. |
+| Form nhập (19/11/2026) | Mọi ô mặc định 0, không bắt buộc nhập; gửi là ghi 0 cho bộ phận chưa đổi. |
+| Trường dữ liệu v2 (19/11/2026) | **Nghỉ phép** CT/TV = tổng vắng (bỏ Phép năm, Không phép, Ốm, Thai sản, Việc riêng). **Tăng cường** đi/đến chỉ ghi nhận, không tính vào tỷ lệ; Thực tế làm việc = hiện diện − đi + đến. **Tăng ca** gồm số người và tổng số giờ của bộ phận (bước 0,5). Dữ liệu cũ: tổng vắng cộng vào Nghỉ phép CT, bản cũ lưu ở sheet `NhapLieu_cu`. |
+| Dashboard (19/11/2026) | Bộ chọn Tất cả (mặc định) / Chỉ NM1 / Chỉ NM2 / Kho Thanh Bình. |
 
 ## 4. Việc còn lại (đánh dấu bước đã làm)
 Thứ tự làm, chi tiết xem `README.md` mục 3:
