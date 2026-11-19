@@ -109,6 +109,37 @@ fail(call({action:'entryForm', token:tX1}), /bị khóa/);
 sheets.DanhMuc.data[11][5] = 50; sheets.DanhMuc.data[11][7] = '2026-11-18';
 assert.equal(ctx.recalcAll(), 1);
 assert.equal(sheets.NhapLieu.data.find(r => r[0]==='2026-11-18' && r[1]==='NM1-11')[5], 50);
+// Quản lý người dùng & PIN
+{
+  const tA = ok(call({action:'login', ma:'ADMIN', pin:pins['ADMIN']})).token;
+  fail(call({action:'userList', token:tBgd}), /không có quyền/);
+  let L = ok(call({action:'userList', token:tA}));
+  assert.equal(L.users.length, 9); assert.ok(L.scope.xuong.some(x => x.ma === 'NM1-X1')); assert.ok(!JSON.stringify(L).includes(sheets.NguoiDung.data[1][4]), 'không trả hash PIN');
+  fail(call({action:'userSave', token:tA, moi:true, ma:'NM1-X1-HUNG', ten:'Hùng', vaiTro:'NHAP', phamVi:'NM1-X1', pin:'123456'}), /liên tiếp/);
+  fail(call({action:'userSave', token:tA, moi:true, ma:'NM1-X1-HUNG', ten:'Hùng', vaiTro:'NHAP', phamVi:'NM1-X1', pin:'1111'}), /6 chữ số/);
+  fail(call({action:'userSave', token:tA, moi:true, ma:'NM1-X1-HUNG', ten:'Hùng', vaiTro:'NHAP', phamVi:'NM9-X7', pin:'246810'}), /DanhMuc/);
+  fail(call({action:'userSave', token:tA, moi:true, ma:'NM1-X1', ten:'Trùng', vaiTro:'NHAP', phamVi:'NM1-X1', pin:'246810'}), /đã tồn tại/);
+  fail(call({action:'userSave', token:tA, moi:true, ma:'X', ten:'a', vaiTro:'NHAP', phamVi:'NM1-X1', pin:'246810'}), /2–20/);
+  L = ok(call({action:'userSave', token:tA, moi:true, ma:'nm1-x1-hung', ten:'Nguyễn Văn Hùng', vaiTro:'NHAP', phamVi:'NM1-X1, NM2-05', pin:'246810'}));
+  assert.equal(L.users.length, 10); const hu = L.users.find(u => u.ma === 'NM1-X1-HUNG'); assert.equal(hu.phamVi, 'NM1-X1, NM2-05'); assert.ok(hu.coPin && hu.dangDung);
+  const tH = ok(call({action:'login', ma:'NM1-X1-HUNG', pin:'246810'})).token;
+  const fH = ok(call({action:'entryForm', token:tH})); assert.ok(fH.rows.some(r => r.maBP === 'NM2-05'));
+  // Đổi PIN
+  fail(call({action:'changePin', token:tH, pinCu:'000000', pinMoi:'135790'}), /không đúng/);
+  fail(call({action:'changePin', token:tH, pinCu:'246810', pinMoi:'999999'}), /giống nhau/);
+  ok(call({action:'changePin', token:tH, pinCu:'246810', pinMoi:'135790'}));
+  fail(call({action:'login', ma:'NM1-X1-HUNG', pin:'246810'})); ok(call({action:'login', ma:'NM1-X1-HUNG', pin:'135790'}));
+  // Admin đặt lại PIN + khóa
+  ok(call({action:'userSave', token:tA, ma:'NM1-X1-HUNG', ten:'Nguyễn Văn Hùng', vaiTro:'XEM', phamVi:'NM1-X1', pin:'975310', dangDung:true}));
+  const tH2 = ok(call({action:'login', ma:'NM1-X1-HUNG', pin:'975310'})); assert.equal(tH2.user.vaiTro, 'XEM'); assert.equal(tH2.user.phamVi, '*');
+  ok(call({action:'userSave', token:tA, ma:'NM1-X1-HUNG', ten:'Nguyễn Văn Hùng', vaiTro:'XEM', phamVi:'', dangDung:false}));
+  fail(call({action:'login', ma:'NM1-X1-HUNG', pin:'975310'}));
+  fail(call({action:'entryForm', token:tH2.token}), /bị khóa|không có quyền/);
+  // Không tự khóa / không còn Admin
+  fail(call({action:'userSave', token:tA, ma:'ADMIN', ten:'Admin', vaiTro:'XEM', phamVi:'*', dangDung:true}), /tự bỏ quyền/);
+  assert.ok(!sheets.LichSu.data.some(r => r.join('|').includes('975310') || r.join('|').includes('246810')), 'PIN không bị ghi vào lịch sử');
+  assert.ok(sheets.LichSu.data.some(r => r[2] === 'Thêm người dùng'));
+}
 // Chuyển dữ liệu cấu trúc cũ (v1) sang v2
 {
   const M = makeGlobals(), c2 = vm.createContext(M.g);
