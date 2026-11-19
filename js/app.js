@@ -7,7 +7,7 @@
   var S = { user: null, cfg: {}, view: '', charts: [], timer: null, dirty: false, skipRoute: false };
   var E = null; // trạng thái lưới nhập liệu đang mở
   var fi = C.fmtInt, fp = C.fmtPct, fd = C.fmtDate;
-  var COLOR = { NM1: '#2a78d6', NM2: '#eb6834', rieng: '#1baf7a', tong: '#52514e', extra: ['#eda100', '#e87ba4', '#008300'] };
+  var COLOR = { NM1: '#77bb6e', NM2: '#800a0a', rieng: '#1e4d2b', tong: '#6b6b6b', extra: ['#c9a227', '#4f9a8a', '#a65f5f'] };
   var ROLE = { ADMIN: 'Quản trị', NHAP: 'Nhập liệu', XEM: 'Chỉ xem' };
 
   // ---------- Tiện ích ----------
@@ -134,8 +134,9 @@
   function shell() {
     var app = $('#app');
     if (!$('.topbar', app)) {
-      app.innerHTML = demoBar() + '<header class="topbar"><div class="topbar-in"><div class="brand"><b>' + esc(CFG.APP_NAME) + '</b><small>' +
-        esc(CFG.SUB_NAME) + '</small></div><nav class="nav"></nav><div class="who"></div></div></header><main id="main"></main>';
+      app.innerHTML = demoBar() + '<header class="topbar"><div class="topbar-in"><a class="logo" href="#/" aria-label="Nghĩa Sơn Furniture"><img src="assets/logo.jpg" alt="Nghĩa Sơn Furniture" width="120"></a>' +
+        '<div class="brand"><b>' + esc(CFG.APP_NAME) + '</b><small>' + esc(CFG.SUB_NAME) + '</small></div><div class="who"></div></div></header>' +
+        '<nav class="nav" aria-label="Menu chính"></nav><main id="main"></main>';
     }
     $('.nav').innerHTML = navItems().map(function (x) {
       return '<a href="#/' + x[0] + '" class="' + (S.view === x[0] ? 'on' : '') + '">' + x[1] + '</a>';
@@ -158,7 +159,7 @@
 
   // ---------- Đăng nhập ----------
   function viewLogin() {
-    $('#app').innerHTML = demoBar() + '<div class="login"><div class="card"><h1>' + esc(CFG.APP_NAME) + '</h1><div class="muted">' + esc(CFG.SUB_NAME) +
+    $('#app').innerHTML = demoBar() + '<div class="login"><img class="login-logo" src="assets/logo.jpg" alt="Nghĩa Sơn Furniture"><div class="card"><h1>' + esc(CFG.APP_NAME) + '</h1><div class="muted">' + esc(CFG.SUB_NAME) +
       '</div><form id="f-login" autocomplete="off"><label class="fld">Mã người dùng<input class="input" name="ma" required placeholder="VD: NM1-X1, NM2-VP" autocapitalize="characters"></label>' +
       '<label class="fld">Mã PIN<input class="input" name="pin" type="password" inputmode="numeric" required placeholder="6 chữ số"></label>' +
       '<button class="btn primary" type="submit">Đăng nhập</button>' +
@@ -186,6 +187,8 @@
     { f: 'moiBC', h: 'Chính thức', g: 'm' }, { f: 'moiTV', h: 'Thời vụ', g: 'm' }, { f: 'nvBC', h: 'Chính thức', g: 'n' }, { f: 'nvTV', h: 'Thời vụ', g: 'n' },
     { f: 'tangCa', h: 'Tăng ca', g: '' }
   ];
+  var GLABEL = { phepNam: 'Vắng: Phép năm', khongPhep: 'Vắng: Không phép', om: 'Vắng: Ốm', thaiSan: 'Vắng: Thai sản', viecRieng: 'Vắng: Việc riêng',
+    moiBC: 'Mới: Chính thức', moiTV: 'Mới: Thời vụ', nvBC: 'Nghỉ việc: Chính thức', nvTV: 'Nghỉ việc: Thời vụ', tangCa: 'Tăng ca (người)' };
   function xKey(r) { return C.tenXuong(r.xuong, r.donVi); }
 
   function gridHTML(rows, admin) {
@@ -199,16 +202,16 @@
     var body = rows.map(function (r) {
       var v = r.values || {}, ro = isReadOnly(r);
       return '<tr data-ma="' + esc(r.maBP) + '" data-x="' + esc(xKey(r)) + '"><td class="bp sticky-col">' + esc(r.boPhan) + '<small>' + esc(r.maBP) +
-        ' · ' + esc(xKey(r).split(' · ')[1]) + '</small></td><td class="calc">' + r.bcDau + '</td><td class="calc">' + r.tvDau + '</td>' +
+        ' · ' + esc(xKey(r).split(' · ')[1]) + '</small></td><td class="calc" data-label="Đầu ngày: Chính thức">' + r.bcDau + '</td><td class="calc" data-label="Đầu ngày: Thời vụ">' + r.tvDau + '</td>' +
         GCOLS.map(function (c) {
-          return '<td><input class="cell-in" data-f="' + c.f + '" inputmode="numeric" autocomplete="off" value="' + (r.values ? esc(v[c.f]) : '') + '"' +
+          return '<td data-label="' + esc(GLABEL[c.f]) + '"><input class="cell-in" data-f="' + c.f + '" inputmode="numeric" autocomplete="off" value="' + (r.values ? esc(v[c.f]) : '') + '"' +
             (ro ? ' disabled' : '') + ' aria-label="' + esc(r.boPhan + ' – ' + C.LABELS[c.f]) + '"></td>';
         }).join('') +
-        '<td class="calc qs"></td><td class="calc hd"></td><td class="calc tl"></td><td><input class="cell-in note" data-f="ghiChu" maxlength="500" value="' +
+        '<td class="calc qs" data-label="Quân số trong ngày"></td><td class="calc hd" data-label="Hiện diện"></td><td class="calc tl" data-label="Tỷ lệ"></td><td class="nt" data-label="Ghi chú"><input class="cell-in note" data-f="ghiChu" maxlength="500" value="' +
         esc(v.ghiChu || '') + '"' + (ro ? ' disabled' : '') + ' aria-label="Ghi chú ' + esc(r.boPhan) + '"></td><td class="st"></td>' +
-        (admin ? '<td>' + (r.daNhap ? '<button class="btn sm danger" data-del="' + esc(r.maBP) + '">Xóa</button>' : '') + '</td>' : '') + '</tr>';
+        (admin ? '<td class="act">' + (r.daNhap ? '<button class="btn sm danger" data-del="' + esc(r.maBP) + '">Xóa</button>' : '') + '</td>' : '') + '</tr>';
     }).join('');
-    return '<div class="tbl-wrap" style="max-height:calc(100vh - 260px)"><table class="tbl entry"><thead>' + th1 + th2 + '</thead><tbody>' + body + '</tbody></table></div>';
+    return '<div class="tbl-wrap entry-wrap" style="max-height:calc(100vh - 260px)"><table class="tbl entry"><thead>' + th1 + th2 + '</thead><tbody>' + body + '</tbody></table></div>';
   }
   function isReadOnly(r) {
     if (!E || E.mode === 'admin') return false;
@@ -395,14 +398,14 @@
   function setupChartDefaults() {
     if (!window.Chart || setupChartDefaults.done) return;
     setupChartDefaults.done = true;
-    Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+    Chart.defaults.font.family = '"Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
     Chart.defaults.font.size = 12;
-    Chart.defaults.color = '#52514e';
-    Chart.defaults.borderColor = '#e1e0d9';
+    Chart.defaults.color = '#4a4f4b';
+    Chart.defaults.borderColor = '#dce7df';
     Chart.defaults.plugins.legend.labels.boxWidth = 10;
     Chart.defaults.plugins.legend.labels.boxHeight = 10;
     Chart.defaults.plugins.legend.labels.usePointStyle = true;
-    Chart.defaults.plugins.tooltip.backgroundColor = '#1f1f1d';
+    Chart.defaults.plugins.tooltip.backgroundColor = '#1b2a1f';
     Chart.defaults.plugins.tooltip.padding = 9;
     Chart.defaults.maintainAspectRatio = false;
   }
@@ -411,8 +414,8 @@
     var v = vals.filter(function (x) { return x !== null && x !== undefined; });
     var lo = v.length ? Math.min.apply(null, v) : 0.8;
     var s = { min: Math.max(0, Math.floor((lo - 0.02) * 50) / 50), max: 1, ticks: { callback: function (x) { return Math.round(x * 100) + '%'; } },
-      grid: { color: '#ecebe6' }, border: { display: false } };
-    if (horizontal) s.grid = { color: '#ecebe6' };
+      grid: { color: '#e3ede6' }, border: { display: false } };
+    if (horizontal) s.grid = { color: '#e3ede6' };
     return s;
   }
   function trendChart(el, labels, series) {
@@ -487,7 +490,7 @@
       data: { labels: C.VANG.map(function (f) { return C.LABELS[f]; }), datasets: R.vangTheoDonVi.map(function (u, i) {
         return { label: u.label, data: C.VANG.map(function (f) { return u[f]; }), backgroundColor: unitColor(u.key, i), borderRadius: 4, borderSkipped: 'start', maxBarThickness: 26 };
       }) },
-      options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#ecebe6' }, border: { display: false } }, x: { grid: { display: false } } },
+      options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#e3ede6' }, border: { display: false } }, x: { grid: { display: false } } },
         plugins: { legend: { position: 'top', align: 'end' } } }
     });
     var xs = R.xuong.filter(function (x) { return x.soBP; });
