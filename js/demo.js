@@ -82,7 +82,11 @@ var Demo = (function () {
     }
   }
 
-  function ix() { return C.buildIndex({ danhMuc: danhMuc, records: records, cfg: cfg, ngayNghi: [] }); }
+  function ix(dv) {
+    var dm = dv ? danhMuc.filter(function (bp) { return bp.donVi === dv; }) : danhMuc;
+    var set = {}; dm.forEach(function (bp) { set[bp.maBP] = 1; });
+    return C.buildIndex({ danhMuc: dm, records: dv ? records.filter(function (r) { return set[r.maBP]; }) : records, cfg: cfg, ngayNghi: [] });
+  }
   function err(m) { return { ok: false, error: m }; }
   function sess(t) { return sessions[t] || null; }
   function nguoi(u) { return u.ten + ' (' + u.ma + ')'; }
@@ -155,7 +159,7 @@ var Demo = (function () {
           var res = save(s, n.ymd, q.rows, 'FORM'), f = entryForm(s); f.results = res; return f;
         case 'dailyReport': return { ok: true, report: C.dailyReport(ix(), viewDate(q.ngay)) };
         case 'monthlyReport': return { ok: true, report: C.monthlyReport(ix(), q.thang || n.ymd.slice(0, 7), n.ymd) };
-        case 'dashboard': return { ok: true, report: C.dashboard(ix(), viewDate(q.ngay)), now: n };
+        case 'dashboard': return { ok: true, report: C.dashboard(ix(q.donVi ? String(q.donVi).toUpperCase() : ''), viewDate(q.ngay)), now: n };
         case 'status': var st = C.entryStatus(ix(), viewDate(q.ngay)); st.chuaPhanXuong = danhMuc.filter(function (b) { return !b.xuong; }).length; return { ok: true, report: st };
         case 'adminDay': need(['ADMIN']); return adminDay(viewDate(q.ngay));
         case 'adminSave':

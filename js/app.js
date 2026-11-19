@@ -183,7 +183,7 @@
   // =====================================================================
   var GCOLS = [
     { f: 'phepNam', h: 'Phép năm', g: 'v' }, { f: 'khongPhep', h: 'Không phép', g: 'v' }, { f: 'om', h: 'Ốm', g: 'v' },
-    { f: 'thaiSan', h: 'Thai sản', g: 'v' }, { f: 'viecRieng', h: 'Việc riêng', g: 'v' },
+    { f: 'thaiSan', h: 'Thai sản', g: 'v' },
     { f: 'moiBC', h: 'Chính thức', g: 'm' }, { f: 'moiTV', h: 'Thời vụ', g: 'm' }, { f: 'nvBC', h: 'Chính thức', g: 'n' }, { f: 'nvTV', h: 'Thời vụ', g: 'n' },
     { f: 'tangCa', h: 'Tăng ca', g: '' }
   ];
@@ -192,19 +192,19 @@
   function xKey(r) { return C.tenXuong(r.xuong, r.donVi); }
 
   function gridHTML(rows, admin) {
-    var th1 = '<tr><th rowspan="2" class="sticky-col">Bộ phận</th><th colspan="2">Quân số đầu ngày</th><th colspan="5" class="g-vang">Số người vắng</th>' +
-      '<th colspan="2" class="g-bd">Nhân sự mới</th><th colspan="2" class="g-bd">Nghỉ việc</th><th rowspan="2">Tăng ca<br>(người)</th>' +
+    var th1 = '<tr><th rowspan="2" class="sticky-col">Bộ phận</th><th colspan="2">Quân số đầu ngày</th><th colspan="4" class="g-vang">Số người vắng</th>' +
+      '<th colspan="2" class="g-moi">Nhân sự mới</th><th colspan="2" class="g-nghi">Nghỉ việc</th><th rowspan="2">Tăng ca<br>(người)</th>' +
       '<th rowspan="2">Quân số<br>trong ngày</th><th rowspan="2">Hiện<br>diện</th><th rowspan="2">Tỷ lệ</th><th rowspan="2">Ghi chú</th><th rowspan="2">Trạng thái</th>' +
       (admin ? '<th rowspan="2"></th>' : '') + '</tr>';
-    var th2 = '<tr><th>Chính thức</th><th>Thời vụ</th>' + GCOLS.slice(0, 9).map(function (c) {
-      return '<th class="' + (c.g === 'v' ? 'g-vang' : 'g-bd') + '">' + c.h + '</th>';
+    var th2 = '<tr><th>Chính thức</th><th>Thời vụ</th>' + GCOLS.slice(0, 8).map(function (c) {
+      return '<th class="g-' + (c.g === 'v' ? 'vang' : c.g === 'm' ? 'moi' : 'nghi') + '">' + c.h + '</th>';
     }).join('') + '</tr>';
     var body = rows.map(function (r) {
       var v = r.values || {}, ro = isReadOnly(r);
       return '<tr data-ma="' + esc(r.maBP) + '" data-x="' + esc(xKey(r)) + '"><td class="bp sticky-col">' + esc(r.boPhan) + '<small>' + esc(r.maBP) +
         ' · ' + esc(xKey(r).split(' · ')[1]) + '</small></td><td class="calc" data-label="Đầu ngày: Chính thức">' + r.bcDau + '</td><td class="calc" data-label="Đầu ngày: Thời vụ">' + r.tvDau + '</td>' +
         GCOLS.map(function (c) {
-          return '<td data-label="' + esc(GLABEL[c.f]) + '"><input class="cell-in" data-f="' + c.f + '" inputmode="numeric" autocomplete="off" value="' + (r.values ? esc(v[c.f]) : '0') + '"' +
+          return '<td class="c-' + (c.g || 'x') + '" data-label="' + esc(GLABEL[c.f]) + '"><input class="cell-in" data-f="' + c.f + '" inputmode="numeric" autocomplete="off" value="' + (r.values ? esc(v[c.f]) : '0') + '"' +
             (ro ? ' disabled' : '') + ' aria-label="' + esc(r.boPhan + ' – ' + C.LABELS[c.f]) + '"></td>';
         }).join('') +
         '<td class="calc qs" data-label="Quân số trong ngày"></td><td class="calc hd" data-label="Hiện diện"></td><td class="calc tl" data-label="Tỷ lệ"></td><td class="nt" data-label="Ghi chú"><input class="cell-in note" data-f="ghiChu" maxlength="500" value="' +
@@ -221,6 +221,8 @@
   }
   function readRow(tr) {
     var o = {};
+    var r0 = E.byMa[tr.dataset.ma]; // cột "Việc riêng" đã ẩn khỏi form: giữ giá trị đã lưu, mặc định 0
+    o.viecRieng = (r0 && r0.values && r0.values.viecRieng !== undefined) ? String(r0.values.viecRieng) : '0';
     $$('input[data-f]', tr).forEach(function (i) { var x = i.value.trim(); o[i.dataset.f] = (x === '' && i.dataset.f !== 'ghiChu') ? '0' : x; });
     return o;
   }
@@ -426,27 +428,29 @@
   }
 
   function viewDashboard(h) {
-    var ngay = h.q.ngay || '';
-    var load = function () { return api('dashboard', { ngay: ngay }).then(function (d) { renderDash(d.report, d.now); }).catch(showErr); };
+    var ngay = h.q.ngay || '', dv = /^[A-Za-z0-9_-]{1,10}$/.test(h.q.dv || '') ? h.q.dv.toUpperCase() : '';
+    var load = function () { return api('dashboard', { ngay: ngay, donVi: dv }).then(function (d) { renderDash(d.report, d.now, dv); }).catch(showErr); };
     load();
     if (!ngay) S.timer = setInterval(load, Math.max(1, Number(CFG.AUTO_REFRESH_PHUT) || 5) * 60000);
   }
-  function renderDash(R, now) {
-    cleanupCharts();
+  function renderDash(R, now, dv) {
+    cleanupCharts(); dv = dv || '';
+    var scopeName = dv || 'toàn công ty';
     var t = R.tong, cfg = S.cfg, isToday = R.ngay === todayVN();
     var units = R.groups.filter(function (g) { return g.nhom !== 'tong'; });
-    var html = '<div class="page-head"><div><h1>Dashboard nhân sự – ' + esc(C.thuDayDu(R.ngay)) + ', ' + fd(R.ngay) + '</h1><div class="sub">' +
+    var html = '<div class="page-head"><div><h1>Dashboard nhân sự' + (dv ? ' ' + esc(dv) : '') + ' – ' + esc(C.thuDayDu(R.ngay)) + ', ' + fd(R.ngay) + '</h1><div class="sub">' +
       '<span class="chip ' + (R.daNhap === R.tongBP ? 'good' : R.daNhap ? 'warn' : 'crit') + '">Đã nhập ' + R.daNhap + '/' + R.tongBP + ' bộ phận</span> ' +
       (isToday && now ? '<span class="muted">Cập nhật lúc ' + esc(now.hm) + ' · tự làm mới mỗi ' + (CFG.AUTO_REFRESH_PHUT || 5) + ' phút</span>' : '') +
       (!R.ngayLamViec ? ' <span class="chip">Ngày nghỉ theo lịch</span>' : '') + '</div></div>' +
-      '<div class="tools"><input type="date" class="input" id="d-ngay" max="' + todayVN() + '" value="' + R.ngay + '"><button class="btn" id="d-today">Hôm nay</button>' +
+      '<div class="tools"><select class="input" id="d-dv" aria-label="Chọn đơn vị xem"><option value="">Xem chung (NM1 + NM2)</option><option value="NM1"' + (dv === 'NM1' ? ' selected' : '') + '>Chỉ NM1</option><option value="NM2"' + (dv === 'NM2' ? ' selected' : '') + '>Chỉ NM2</option></select>' +
+      '<input type="date" class="input" id="d-ngay" max="' + todayVN() + '" value="' + R.ngay + '"><button class="btn" id="d-today">Hôm nay</button>' +
       '<button class="btn" id="d-reload">Làm mới</button></div></div>';
     if (!t.soBP) {
       html += '<div class="card empty">Chưa có bộ phận nào nhập số liệu cho ngày ' + fd(R.ngay) + '.</div>';
       $('#main').innerHTML = html; bindDashTools(); return;
     }
     html += '<div class="kpis">' +
-      '<div class="kpi hero"><div class="lb">Tỷ lệ chuyên cần toàn công ty</div><div class="v">' + fp(t.tyLe) + '</div><div class="s">' + statusChip(t.mucDo, cfg) +
+      '<div class="kpi hero"><div class="lb">Tỷ lệ chuyên cần ' + esc(scopeName) + '</div><div class="v">' + fp(t.tyLe) + '</div><div class="s">' + statusChip(t.mucDo, cfg) +
       (t.chenh !== null ? ' ' + deltaHtml(t.chenh) + ' điểm so với ' + shortDate(R.ngayTruoc) : '') +
       ' · Tháng: ' + fp(R.thang.tyLe) + '</div></div>' +
       kpi('Quân số trong ngày', fi(t.quanSo), 'Đầu ngày ' + fi(t.tongDau) + ' · chính thức ' + fi(t.bcDau) + ' · thời vụ ' + fi(t.tvDau)) +
@@ -474,7 +478,7 @@
     bindDashTools();
     $('#btn-copy').onclick = function () { copyText(R.banTin); };
     trendChart($('#c-trend'), R.trend.map(function (x) { return shortDate(x.ngay); }),
-      [{ label: 'Toàn công ty', color: COLOR.tong, data: R.trend.map(function (x) { return x.tyLe; }), dash: [5, 4] }].concat(R.nhomDefs.map(function (g, i) {
+      (dv ? [] : [{ label: 'Toàn công ty', color: COLOR.tong, data: R.trend.map(function (x) { return x.tyLe; }), dash: [5, 4] }]).concat(R.nhomDefs.map(function (g, i) {
         return { label: g.label, color: unitColor(g.key, i), data: R.trend.map(function (x) { return x.nhom[g.key]; }) };
       })));
     mkChart($('#c-vang'), {
@@ -497,8 +501,10 @@
   function cleanupCharts() { S.charts.forEach(function (c) { c.destroy(); }); S.charts = []; }
   function kpi(lb, v, s) { return '<div class="kpi"><div class="lb">' + lb + '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></div>'; }
   function bindDashTools() {
-    $('#d-ngay').onchange = function () { var v = this.value; if (v) go('#/dashboard?ngay=' + v); };
-    $('#d-today').onclick = function () { go('#/dashboard'); };
+    var dvq = function (first) { var v = $('#d-dv') ? $('#d-dv').value : ''; return v ? (first ? '?' : '&') + 'dv=' + v : ''; };
+    $('#d-dv').onchange = function () { var d = $('#d-ngay').value; go('#/dashboard' + (d && d !== todayVN() ? '?ngay=' + d + dvq(false) : dvq(true))); };
+    $('#d-ngay').onchange = function () { var v = this.value; if (v) go('#/dashboard?ngay=' + v + dvq(false)); };
+    $('#d-today').onclick = function () { go('#/dashboard' + dvq(true)); };
     $('#d-reload').onclick = function () { route(); };
   }
   function lowTable(rows) {
