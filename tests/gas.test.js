@@ -109,6 +109,16 @@ fail(call({action:'entryForm', token:tX1}), /bị khóa/);
 sheets.DanhMuc.data[11][5] = 50; sheets.DanhMuc.data[11][7] = '2026-11-18';
 assert.equal(ctx.recalcAll(), 1);
 assert.equal(sheets.NhapLieu.data.find(r => r[0]==='2026-11-18' && r[1]==='NM1-11')[5], 50);
+// Xem công khai không cần đăng nhập
+{
+  const pi = ok(call({action:'publicInfo'})); assert.ok(pi.cfg.NGUONG_DO);
+  ok(call({action:'dashboard'})); ok(call({action:'dailyReport', ngay:'2026-11-17'})); ok(call({action:'monthlyReport', thang:'2026-11'})); ok(call({action:'status'}));
+  fail(call({action:'entryForm'}), /AUTH/); fail(call({action:'userList'}), /AUTH/); fail(call({action:'history'}), /AUTH/); fail(call({action:'adminSave', ngay:'2026-11-17', lyDo:'abcdef', rows:[]}), /AUTH/);
+  sheets.CauHinh.data.push(['XEM_CONG_KHAI', 'FALSE', '']);
+  fail(call({action:'dashboard'}), /AUTH/); fail(call({action:'publicInfo'}), /AUTH/);
+  ok(call({action:'dashboard', token:tBgd}));
+  sheets.CauHinh.data.pop();
+}
 // Quản lý người dùng & PIN
 {
   const tA = ok(call({action:'login', ma:'ADMIN', pin:pins['ADMIN']})).token;
