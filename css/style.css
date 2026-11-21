@@ -331,3 +331,4 @@ pre.bulletin { white-space: pre-wrap; margin: 0; padding: 12px 14px; background:
   .entry td.c-c { border-left: 4px solid #1e4d2b !important; padding-left: 7px !important; }
 }
 .who a.btn { text-decoration: none; }
+.who .role { flex: 0 0 auto; }
