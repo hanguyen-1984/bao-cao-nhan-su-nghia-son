@@ -186,7 +186,8 @@ var Demo = (function () {
         sessions[tok] = { ma: ma, ten: u.ten, vaiTro: u.vaiTro, phamVi: u.phamVi };
         return { ok: true, token: tok, user: sessions[tok], now: n, cfg: cfg };
       }
-      var s = sess(q.token);
+      if (!q.token && a === 'publicInfo') return { ok: true, now: n, cfg: cfg };
+      var s = sess(q.token) || (!q.token && ['dashboard', 'dailyReport', 'monthlyReport', 'status'].indexOf(a) >= 0 ? { ma: '', ten: 'Người xem', vaiTro: 'KHACH', phamVi: '' } : null);
       if (!s) return err('AUTH: Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.');
       var need = function (roles) { if (roles.indexOf(s.vaiTro) < 0) throw new Error('Tài khoản ' + s.ma + ' không có quyền thực hiện thao tác này.'); };
       switch (a) {

@@ -8,7 +8,14 @@
   var E = null; // trạng thái lưới nhập liệu đang mở
   var fi = C.fmtInt, fp = C.fmtPct, fd = C.fmtDate, fh = C.fmtNum;
   var COLOR = { NM1: '#77bb6e', NM2: '#800a0a', rieng: '#1e4d2b', tong: '#6b6b6b', extra: ['#c9a227', '#4f9a8a', '#a65f5f'] };
-  var ROLE = { ADMIN: 'Quản trị', NHAP: 'Nhập liệu', XEM: 'Chỉ xem' };
+  var ROLE = { ADMIN: 'Quản trị', NHAP: 'Nhập liệu', XEM: 'Chỉ xem', KHACH: 'Xem báo cáo' };
+  var GUEST = { ma: '', ten: 'Xem báo cáo', vaiTro: 'KHACH', phamVi: '' };
+  function isGuest() { return S.user && S.user.vaiTro === 'KHACH'; }
+  /** Vào chế độ xem không cần đăng nhập (Dashboard + Báo cáo). Không được thì hiện trang đăng nhập. */
+  function enterGuest() {
+    API.call('publicInfo', {}).then(function (r) { S.user = GUEST; S.cfg = r.cfg || {}; route(); })
+      .catch(function () { S.user = null; viewLogin(); });
+  }
 
   // ---------- Tiện ích ----------
   var mem = {};
@@ -110,8 +117,10 @@
   var lastHash = '';
   function route() {
     if (S.skipRoute) { S.skipRoute = false; return; }
-    if (!S.user) return viewLogin();
-    var h = parseHash(), allowed = navItems().map(function (x) { return x[0]; }).concat(['doi-pin']);
+    if (!S.user) return enterGuest();
+    var h = parseHash(), allowed = navItems().map(function (x) { return x[0]; }).concat(isGuest() ? [] : ['doi-pin']);
+    if (isGuest() && h.view === 'dang-nhap') { lastHash = ''; return viewLogin(); }
+    if (isGuest() && ['nhap', 'quan-tri', 'doi-pin'].indexOf(h.view) >= 0) { toast('Đăng nhập để dùng chức năng này.'); go('#/dang-nhap'); return; }
     if (allowed.indexOf(h.view) < 0) { go('#/' + (S.user.vaiTro === 'NHAP' ? 'nhap' : 'dashboard')); return; }
     if (S.dirty && lastHash && lastHash !== h.raw && !confirm('Có số liệu chưa gửi. Rời trang này và bỏ các thay đổi?')) {
       S.skipRoute = true; location.hash = lastHash; return;
@@ -141,9 +150,13 @@
     $('.nav').innerHTML = navItems().map(function (x) {
       return '<a href="#/' + x[0] + '" class="' + (S.view === x[0] ? 'on' : '') + '">' + x[1] + '</a>';
     }).join('');
-    $('.who').innerHTML = '<span>' + esc(S.user.ten) + '</span><span class="role">' + (ROLE[S.user.vaiTro] || S.user.vaiTro) +
-      '</span><a class="btn sm" href="#/doi-pin" id="btn-pin">Đổi PIN</a><button class="btn sm" id="btn-out">Đăng xuất</button>';
-    $('#btn-out').onclick = function () { if (!S.dirty || confirm('Có số liệu chưa gửi. Vẫn đăng xuất?')) logout(); };
+    if (isGuest()) {
+      $('.who').innerHTML = '<span class="role">Chế độ xem</span><a class="btn sm primary" href="#/dang-nhap">Đăng nhập nhập liệu</a>';
+    } else {
+      $('.who').innerHTML = '<span>' + esc(S.user.ten) + '</span><span class="role">' + (ROLE[S.user.vaiTro] || S.user.vaiTro) +
+        '</span><a class="btn sm" href="#/doi-pin" id="btn-pin">Đổi PIN</a><button class="btn sm" id="btn-out">Đăng xuất</button>';
+      $('#btn-out').onclick = function () { if (!S.dirty || confirm('Có số liệu chưa gửi. Vẫn đăng xuất?')) logout(); };
+    }
     $('#main').innerHTML = '<div class="empty">Đang tải…</div>';
   }
   function logout(expired) {
@@ -154,7 +167,7 @@
     cleanup();
     if (expired) toast('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.', 'err');
     history.replaceState(null, '', location.pathname + location.search);
-    viewLogin();
+    if (expired) viewLogin(); else enterGuest();
   }
 
   // ---------- Đăng nhập ----------
@@ -164,7 +177,7 @@
       '<label class="fld">Mã PIN<input class="input" name="pin" type="password" inputmode="numeric" required placeholder="6 chữ số"></label>' +
       '<button class="btn primary" type="submit">Đăng nhập</button>' +
       (API.demo ? '<div class="hint">Demo – PIN <b>123456</b> cho mọi tài khoản: <b>ADMIN</b>, <b>BGD</b> (xem), <b>NM1-VP</b>, <b>NM1-X1</b>, <b>NM1-X2</b>, <b>NM1-KHO</b>, <b>NM2-VP</b>, <b>NM2-X1</b>, <b>NM2-X2</b>.</div>' : '') +
-      '</form></div></div>';
+      '</form><div style="text-align:center;margin-top:14px"><a href="#/dashboard">← Xem Dashboard &amp; Báo cáo (không cần đăng nhập)</a></div></div></div>';
     $('#f-login').onsubmit = function (ev) {
       ev.preventDefault();
       var f = ev.target;
@@ -954,8 +967,8 @@
   function init() {
     document.title = CFG.APP_NAME || document.title;
     var tok = store.get('ns_token');
-    if (!tok) return viewLogin();
-    api('me').then(function (r) { S.user = r.user; S.cfg = r.cfg || {}; route(); }).catch(function () { store.del('ns_token'); viewLogin(); });
+    if (!tok) return enterGuest();
+    api('me').then(function (r) { S.user = r.user; S.cfg = r.cfg || {}; route(); }).catch(function () { store.del('ns_token'); enterGuest(); });
   }
   init();
 })();
