@@ -40,6 +40,7 @@ var CH_DEFAULT = [
   ['NGUONG_DO', '0.9', 'Tỷ lệ chuyên cần dưới mức này: cảnh báo đỏ (0.9 = 90%).'],
   ['NGUONG_VANG', '0.95', 'Tỷ lệ chuyên cần dưới mức này: cảnh báo vàng (0.95 = 95%).'],
   ['PHIEN_GIO', '6', 'Số giờ giữ đăng nhập (tối đa 6).'],
+  ['XEM_CONG_KHAI', 'TRUE', 'TRUE: ai mở trang cũng xem được Dashboard và Báo cáo, không cần đăng nhập. FALSE: phải đăng nhập mới xem.'],
   ['TEN_NM1', 'Công ty TNHH Đồ gỗ Nghĩa Sơn', 'Tên đầy đủ NM1'],
   ['TEN_NM2', 'Công ty TNHH SXTM Đồ gỗ Nghĩa Sơn', 'Tên đầy đủ NM2']
 ];
@@ -220,7 +221,18 @@ function route_(req) {
   var a = req.action;
   if (a === 'ping') return { ok: true, version: APP_VERSION, now: nowVN_() };
   if (a === 'login') return apiLogin_(req);
+  if (!req.token && PUBLIC_ACTIONS.indexOf(a) >= 0) {
+    var cfg = loadCfg_();
+    if (!NSCore.boolCfg(cfg.XEM_CONG_KHAI, true)) throw new Error('AUTH: Cần đăng nhập để xem báo cáo.');
+    if (a === 'publicInfo') return { ok: true, now: nowVN_(), cfg: publicCfg_(cfg) };
+    return route2_(a, req, null);
+  }
   var user = requireSession_(req.token);
+  return route2_(a, req, user);
+}
+/** Các thao tác chỉ xem, cho phép không đăng nhập khi CauHinh › XEM_CONG_KHAI = TRUE. */
+var PUBLIC_ACTIONS = ['publicInfo', 'dashboard', 'dailyReport', 'monthlyReport', 'status'];
+function route2_(a, req, user) {
   switch (a) {
     case 'logout': CacheService.getScriptCache().remove('S:' + req.token); return { ok: true };
     case 'me': return { ok: true, user: user, now: nowVN_(), cfg: publicCfg_(loadCfg_()) };
